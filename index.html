@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Goyang Sanggul</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+</head>
+<body>
+    <audio id="bgMusic" src="assets/BG_Music.mp3" loop autoplay></audio>
+    <!-- Front Screen -->
+    <div id="frontScreen" class="front-screen">
+        <img id="openingScreen" src="assets/Opening_BG.png" alt="Opening Background" class="opening-bg">
+        <button id="startGameBtn" class="start-button">
+            <img src="assets/Button.png" alt="Start Button" class="button-image">
+        </button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="gameScreen" class="game-container" style="display: none;">
+        <!-- Loading Screen -->
+        <div id="loadingScreen" class="loading-screen">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Initializing camera...</div>
+                <div class="loading-subtext">Please wait while we set up your game</div>
+            </div>
+        </div>
+        
+        <!-- Ornate Frame -->
+        <div class="ornate-frame">
+            
+            <!-- Game Area -->
+            <div class="game-area">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="canvas"></canvas>
+                <div class="nose-indicator" id="noseIndicator"></div>
+                
+                <!-- Word Display -->
+                <div id="currentWord" class="word-display"></div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Closing Screen -->
+    <div id="closingScreen" class="closing-screen" style="display: none;"></div>
+
+    <!-- Hidden Image Preloader (loads all game assets via HTML - no CORS issues) -->
+    <div id="imagePreloader" style="display: none;">
+        <!-- Game UI Images -->
+        <img id="img_gameBgImage" src="assets/Game_BG.png" alt="">
+        <img id="img_instructionImage" src="assets/Instruction.png" alt="">
+        <img id="img_questionImage" src="assets/Question_BG.png" alt="">
+        <img id="img_timerBgImage" src="assets/Timer_BG.png" alt="">
+        <img id="img_timerFgImage" src="assets/Timer_FG.png" alt="">
+        
+        <!-- Brand Product Images - Skintific -->
+        <img id="img_skintific_1" src="assets/Skintific_001_5X Moisturizer.png" alt="">
+        <img id="img_skintific_2" src="assets/Skintific_002_Velvet Matte Cushion.png" alt="">
+        <img id="img_skintific_3" src="assets/Skintific_003_Instant Glowing Serum.png" alt="">
+        
+        <!-- Brand Product Images - Scarlett -->
+        <img id="img_scarlett_1" src="assets/Scarlett_001_Extrait De Parfum Velvet Rouge.png" alt="">
+        <img id="img_scarlett_2" src="assets/Scarlett_002_Fragrance Brightening Body Serum.png" alt="">
+        <img id="img_scarlett_3" src="assets/Scarlett_003_Low pH Gel Cleanser Glow Bright.png" alt="">
+        
+        <!-- Brand Product Images - Vaseline -->
+        <img id="img_vaseline_1" src="assets/Vaseline_001_Gluta Hya Serum Burst Sunsccreen.png" alt="">
+        <img id="img_vaseline_2" src="assets/Vaseline_002_Gluta Hya Smoothing Perfector.png" alt="">
+        <img id="img_vaseline_3" src="assets/Vaseline_003_Gluta Hya Flawless Bright.png" alt="">
+        
+        <!-- Brand Product Images - FAV Beauty -->
+        <img id="img_favbeauty_1" src="assets/FAV Beauty_001_Masker Peel Off FAV Beauty.jpeg" alt="">
+        <img id="img_favbeauty_2" src="assets/FAV Beauty_002_Fav Beauty Invisimatte Gel Powder.jpeg" alt="">
+        <img id="img_favbeauty_3" src="assets/FAV Beauty_003_Fav Beauty Airy Sunscreen Cushion.jpeg" alt="">
+        
+        <!-- Brand Product Images - Xi Yaopin -->
+        <img id="img_xiyaopin_1" src="assets/Xi Yaopin_001_Zhi Tube Salep Wasir.png" alt="">
+        <img id="img_xiyaopin_2" src="assets/Xi Yaopin_002_Zhi Foam Sabun.png" alt="">
+        <img id="img_xiyaopin_3" src="assets/Xi Yaopin_003_Zhi Blister Kapsul Wasir.png" alt="">
+        
+        <!-- Brand QR Codes -->
+        <img id="img_qrcode_1" src="assets/1.png" alt="">
+        <img id="img_qrcode_2" src="assets/2.png" alt="">
+        <img id="img_qrcode_3" src="assets/3.png" alt="">
+        <img id="img_qrcode_4" src="assets/4.png" alt="">
+        <img id="img_qrcode_5" src="assets/5.png" alt="">
+        <img id="img_qrcode_6" src="assets/6.png" alt="">
+        <img id="img_qrcode_7" src="assets/7.png" alt="">
+        <img id="img_qrcode_8" src="assets/8.png" alt="">
+        <img id="img_qrcode_9" src="assets/9.png" alt="">
+        <img id="img_qrcode_10" src="assets/10.png" alt="">
+        <img id="img_qrcode_11" src="assets/11.png" alt="">
+        <img id="img_qrcode_12" src="assets/12.png" alt="">
+        <img id="img_qrcode_13" src="assets/13.png" alt="">
+        <img id="img_qrcode_14" src="assets/14.png" alt="">
+        <img id="img_qrcode_15" src="assets/15.png" alt="">
+        
+        <!-- Closing Background -->
+        <img id="img_closingBg" src="assets/Closing_Offline_BG.png" alt="">
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
