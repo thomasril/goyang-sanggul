@@ -68,46 +68,6 @@ body {
     z-index: 1;
 }
 
-.start-button {
-    position: absolute;
-    top: 75%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: none;
-    border: none;
-    cursor: pointer;
-    z-index: 2;
-    transition: transform 0.3s ease;
-    padding: 10px; /* Touch-friendly padding */
-    touch-action: manipulation;
-}
-
-.start-button:hover,
-.start-button:active {
-    transform: translateX(-50%) scale(1.05);
-}
-
-.button-image {
-    width: auto;
-    height: auto;
-    max-width: 200px;
-    max-height: 80px;
-    display: block;
-}
-
-/* Mobile button sizing */
-@media screen and (max-width: 768px) {
-    .button-image {
-        max-width: 40vw;
-        max-height: 15vh;
-    }
-    
-    .start-button {
-        top: 70%;
-    }
-}
-
-
 /* Loading Screen */
 .loading-screen {
     position: absolute;
@@ -206,19 +166,6 @@ body {
 
 /* Specific media query for 1080x1920 screens */
 @media screen and (min-width: 1080px) and (min-height: 1900px) {
-    .start-button {
-        top: 88vh;
-    }
-    
-    .button-image {
-        max-width: 45vw;
-        max-height: 20vh;
-    }
-    
-    .restart-button {
-        top: 75%;
-    }
-    
     /* Ornate frame adjustments */
     .ornate-frame {
         width: 100%;
@@ -288,70 +235,12 @@ canvas {
     z-index: 9999;
 }
 
-.closing-bg {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-}
-
-.restart-button {
-    position: absolute;
-    top: 60%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: none;
-    border: none;
-    cursor: pointer;
-    z-index: 2;
-    transition: transform 0.3s ease;
-    padding: 10px;
-    touch-action: manipulation;
-}
-
-.restart-button:hover,
-.restart-button:active {
-    transform: translateX(-50%) scale(1.05);
-}
-
-/* Mobile restart button */
-@media screen and (max-width: 768px) {
-    .restart-button {
-        top: 65%;
-    }
-}
-
 /* Word Display Styles */
 .word-display {
     display: none; /* Hidden - word is now drawn on canvas */
 }
 
-.word-display.filled {
-    background: rgba(0, 255, 0, 0.2);
-    border-color: #00ff00;
-    color: #00aa00;
-}
-
 /* Word display is now handled by canvas - no additional styles needed */
-
-/* Additional mobile optimizations for very small screens */
-@media screen and (max-width: 375px) {
-    .button-image {
-        max-width: 35vw;
-        max-height: 12vh;
-    }
-    
-    .start-button {
-        top: 68%;
-    }
-    
-    .restart-button {
-        top: 63%;
-    }
-}
 
 /* Landscape mode adjustments */
 @media screen and (max-height: 500px) and (orientation: landscape) {
@@ -359,15 +248,6 @@ canvas {
         width: auto;
         height: 100vh;
         max-height: 100vh;
-    }
-    
-    .start-button {
-        top: 60%;
-    }
-    
-    .button-image {
-        max-width: 20vw;
-        max-height: 40vh;
     }
 }
 

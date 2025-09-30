@@ -83,7 +83,6 @@ function detectMobile() {
 let frontScreenElement;
 let gameScreenElement;
 let closingScreenElement;
-let startGameBtn;
 let openingScreen;
 let closingScreen;
 let gameTimer;
@@ -97,7 +96,7 @@ window.addEventListener('load', () => {
   // Try to play music
   const playMusic = () => {
     music.play().catch(error => {
-      console.log("Autoplay failed, waiting for user interaction...");
+        // Autoplay blocked by browser - will play on user interaction
     });
   };
 
@@ -116,16 +115,11 @@ function initializeFrontScreen() {
     gameScreenElement = document.getElementById('gameScreen');
     closingScreenElement = document.getElementById('closingScreen');
     loadingScreenElement = document.getElementById('loadingScreen');
-    startGameBtn = document.getElementById('startGameBtn');
     openingScreen = document.getElementById('openingScreen');
     closingScreen = document.getElementById('closingScreen');
     
     if (openingScreen) {
         openingScreen.addEventListener('click', startGame);
-    }
-
-    if (startGameBtn) {
-        startGameBtn.addEventListener('click', startGame);
     }
     
     if (closingScreen) {
@@ -298,9 +292,7 @@ function showClosingScreen() {
     drawBrandClosingScreen();
     
     // Play win music only if word is actually completed
-    console.log(`Word completed: ${wordIsCompleted}, Win sound available: ${!!winSound}`);
     if (wordIsCompleted && winSound) {
-        console.log('Playing win sound!');
         try {
             // Reset the audio to the beginning in case it was played before
             winSound.currentTime = 0;
@@ -488,8 +480,6 @@ function initializeGame() {
     // Create p5.js canvas with proper 9:16 aspect ratio
     const canvas = createCanvas(dimensions.width, dimensions.height);
     
-    console.log(`Canvas created: ${dimensions.width}x${dimensions.height} (9:16 ratio, target: 1080x1920)`);
-    
     // Replace the existing canvas element with p5's canvas
     if (canvasElement && canvasElement.parentNode) {
         canvasElement.parentNode.replaceChild(canvas.elt, canvasElement);
@@ -646,7 +636,6 @@ const imageNames = [
 
 // Load images from HTML DOM (already preloaded via <img> tags - no CORS issues!)
 function loadImagesFromHTML() {
-    console.log('Loading images from HTML (CSS approach - no CORS issues)');
     const loadPromises = [];
     
     imageNames.forEach(name => {
@@ -657,13 +646,11 @@ function loadImagesFromHTML() {
                 if (imgElement.complete && imgElement.naturalWidth > 0) {
                     // Image already loaded
                     images[name] = imgElement;
-                    console.log(`Loaded ${name} from HTML (already loaded)`);
                     resolve();
                 } else {
                     // Wait for image to load
                     imgElement.onload = () => {
                         images[name] = imgElement;
-                        console.log(`Loaded ${name} from HTML`);
                         resolve();
                     };
                     imgElement.onerror = () => {
@@ -695,18 +682,16 @@ function preload() {
         
         // Add error event listener
         correctWordSound.addEventListener('error', function(e) {
-            console.log('Error loading Game2_CorrectWord.mp3:', e);
             correctWordSound = null;
         });
         
         // Add load event listener
         correctWordSound.addEventListener('canplaythrough', function() {
-            console.log('Game2_CorrectWord.mp3 loaded successfully');
+            // Sound loaded successfully
         });
         
         correctWordSound.load(); // Force load the audio
     } catch (error) {
-        console.log('Error creating correctWordSound:', error);
         correctWordSound = null;
     }
     
@@ -718,8 +703,6 @@ function preload() {
     } catch (error) {
         winSound = null;
     }
-    
-    console.log('Fonts loaded via CSS @font-face');
 }
 
 // Setup function called after preload completes
@@ -732,11 +715,8 @@ function setup() {
     const initialDimensions = calculateCanvasDimensions();
     createCanvas(initialDimensions.width, initialDimensions.height);
     
-    console.log(`Initial canvas: ${initialDimensions.width}x${initialDimensions.height}`);
-    
     // Load images from HTML and wait for them to be ready
     loadImagesFromHTML().then(() => {
-        console.log('All images loaded from HTML');
         
         // Setup brand images from HTML-loaded images
         setupBrandImages();
@@ -745,12 +725,10 @@ function setup() {
         if (document.fonts && document.fonts.ready) {
             document.fonts.ready.then(() => {
                 assetsLoaded = true;
-                console.log('Setup complete - all assets ready (images from HTML, fonts from CSS)');
             });
         } else {
             // Fallback if fonts API not available
             assetsLoaded = true;
-            console.log('Setup complete - all assets ready');
         }
     }).catch(err => {
         console.error('Error loading images:', err);
@@ -837,9 +815,8 @@ function extractTimerFgColor() {
     // Skip pixel reading for HTML images (causes CORS taint with file://)
     // Use default timer color instead
     if (!timerFgColor) {
-        // Default color - a nice blue/cyan for the timer
+        // Default color - a nice blue/cyan for the timer (skipping pixel extraction to avoid CORS)
         timerFgColor = { r: 0, g: 200, b: 255, a: 255 };
-        console.log('Using default timer color (skipping pixel extraction to avoid CORS)');
     }
 }
 
@@ -1214,7 +1191,6 @@ function drawWordOnCanvas() {
     
     // Check if current letter is completed
     const actualIndex = getActualLetterIndex(currentLetterIndex);
-    console.log(`Drawing letter ${currentLetter}, actualIndex: ${actualIndex}, completed: ${wordProgress[actualIndex]}`);
     
     if (wordProgress[actualIndex]) {
         // Letter is completed - show in bold blue
@@ -1563,7 +1539,6 @@ function checkLetterCompletion(letterIndex, letterWidth) {
         // Start completion timer if not already started
         if (!letterCompletionTimers[letterIndex]) {
             letterCompletionTimers[letterIndex] = Date.now();
-            console.log(`Letter ${letterIndex} completion timer started - need to maintain for ${completionDelayMs}ms`);
         }
         
         // Check if enough time has passed
@@ -1572,10 +1547,8 @@ function checkLetterCompletion(letterIndex, letterWidth) {
             // Mark letter as complete after delay
             delete letterCompletionTimers[letterIndex]; // Clean up timer
         wordProgress[letterIndex] = true;
-        console.log(`Letter at index ${letterIndex} completed!`);
         
         // Play letter completion sound with fallback
-        console.log(`CorrectWordSound available: ${!!correctWordSound}`);
         if (correctWordSound) {
             try {
                 // Reset audio to beginning
@@ -1586,27 +1559,23 @@ function checkLetterCompletion(letterIndex, letterWidth) {
                 
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        console.log('Playing Game2_CorrectWord sound');
+                        // Sound playing successfully
                     }).catch((error) => {
-                        console.log('Error playing correctWordSound:', error);
                         // Fallback: play a simple beep sound
                         playFallbackLetterSound();
                     });
                 }
             } catch (error) {
-                console.log('Error playing correctWordSound:', error);
                 // Fallback: play a simple beep sound
                 playFallbackLetterSound();
             }
         } else {
-            console.log('correctWordSound is null or undefined');
             // Fallback: play a simple beep sound
             playFallbackLetterSound();
         }
         
         // Clear nose trails for clean visual reset
         clearTrail();
-        console.log('Cleared nose trails after letter completion');
         
         // Add delay before advancing to next letter
         setTimeout(() => {
@@ -1626,7 +1595,6 @@ function checkLetterCompletion(letterIndex, letterWidth) {
     } else {
         // Letter no longer meets completion criteria - reset timer
         if (letterCompletionTimers[letterIndex]) {
-            console.log(`Letter ${letterIndex} completion timer reset - criteria no longer met`);
             delete letterCompletionTimers[letterIndex];
         }
     }
@@ -1933,7 +1901,6 @@ function windowResized() {
     const dimensions = calculateCanvasDimensions();
     resizeCanvas(dimensions.width, dimensions.height);
     
-    console.log(`Canvas resized to: ${dimensions.width}x${dimensions.height} (9:16 ratio)`);
     // Don't resize video - let it maintain natural aspect ratio
 }
 
