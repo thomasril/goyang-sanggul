@@ -1958,8 +1958,9 @@ function drawBrandClosingScreen() {
         ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
         
         // Select random product image for this brand
+        const randomIndex = Math.floor(Math.random() * 3);
         const productImages = brandImages[currentBrand];
-        const randomProduct = productImages[Math.floor(Math.random() * productImages.length)];
+        const randomProduct = productImages[randomIndex];
         
         // Calculate positions (similar to the example image layout)
         const centerX = logicalWidth / 2;
@@ -2007,7 +2008,7 @@ function drawBrandClosingScreen() {
 
         // Select random product qrcode for this brand
         const productQrcodes = brandQcodes[currentBrand];
-        const randomQrcode = productQrcodes[Math.floor(Math.random() * productQrcodes.length)];
+        const randomQrcode = productQrcodes[randomIndex];
 
         // Draw qrcode with responsive size
         // Responsive QR code size (mobile-friendly)
