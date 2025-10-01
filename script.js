@@ -592,7 +592,11 @@ function videoReady() {
 }
 
 function gotPoses(results) {
-    poses = results;
+    if (results.length > 0) {
+        poses = [results[0]]; // Keep only the first detected person
+    } else {
+        poses = [];
+    }
 }
 
 function modelReady() {
