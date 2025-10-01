@@ -36,7 +36,7 @@ let brandWords = {
     'Scarlett': ['KINCLONG', 'WANGI'],
     'Vaseline': ['LEMBAB', 'HALUS'],
     'FAV Beauty': ['CERAH', 'NATURAL'],
-    'Xi Yaopin': ['HERBAL', 'SEHAT']
+    'Xi Yaopin Zhi': ['HERBAL', 'SEHAT']
 };
 
 // Flatten all words for gameplay with brand reference
@@ -1084,7 +1084,7 @@ function setupBrandImages() {
         images['favbeauty_2'],
         images['favbeauty_3']
     ];
-    brandImages['Xi Yaopin'] = [
+    brandImages['Xi Yaopin Zhi'] = [
         images['xiyaopin_1'],
         images['xiyaopin_2'],
         images['xiyaopin_3']
@@ -1110,7 +1110,7 @@ function setupBrandImages() {
         images['qrcode_11'],
         images['qrcode_12']
     ];
-    brandQcodes['Xi Yaopin'] = [
+    brandQcodes['Xi Yaopin Zhi'] = [
         images['qrcode_13'],
         images['qrcode_14'],
         images['qrcode_15']
