@@ -9,13 +9,17 @@
     <title>Goyang Sanggul</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
-    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
     <audio id="bgMusic" src="assets/BG_Music.mp3" loop autoplay></audio>
     <!-- Front Screen -->
     <div id="frontScreen" class="front-screen">
         <img id="openingScreen" src="assets/Opening_BG.png" alt="Opening Background" class="opening-bg">
+        <div id="preloadIndicator" class="preload-indicator">
+            <div class="preload-spinner"></div>
+            <div class="preload-text">Loading...</div>
+        </div>
     </div>
 
     <!-- Game Screen -->

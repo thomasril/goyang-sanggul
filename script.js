@@ -1,34 +1,34 @@
-// Nose Writing Game - Enhanced smoothing to eliminate shivering + Mobile Responsive
-let poseNet;
+// Nose Writing Game - Using face-api.js for reliable single-person tracking
 let video;
-let poses = [];
 let noseX = 0;
 let noseY = 0;
-// Enhanced smoothing variables
+// Smoothing variables
 let smoothedNoseX = 0;
 let smoothedNoseY = 0;
-let noseHistory = []; // Store recent nose positions for better smoothing
+let noseHistory = [];
 let maxHistoryLength = 10;
-// Trail functionality restored
+// Trail functionality
 let noseTrail = [];
 let isVideoReady = false;
 let isModelReady = false;
-// Pose tracking variables to prevent switching between people
-let lastTrackedNoseX = null;
-let lastTrackedNoseY = null;
-let lastTrackedFaceCenterX = null; // Track center of face for better person identification
-let lastTrackedFaceCenterY = null;
-let maxNoseJumpDistance = 200; // Increased to allow fast movements (was 80)
-let maxFaceCenterJumpDistance = 180; // Increased to allow fast movements (was 90)
-let poseTrackingEnabled = true;
-let personLocked = false; // Flag to indicate we've locked onto a person
-let framesWithoutPerson = 0; // Count frames without detecting the locked person
-let maxFramesWithoutPerson = 8; // Reduced - unlock faster if truly lost (was 45)
-let consecutiveFramesWithPerson = 0; // Count frames to confirm person before locking
-let lockStrength = 0; // Gradually increase lock strength (0-100)
-// Velocity tracking for adaptive thresholds during fast movement
-let lastNoseVelocity = 0;
-let velocityHistory = [];
+let faceDetected = false;
+
+// Face-api.js variables
+let faceApiModelsLoaded = false;
+let detectionInterval = null;
+let currentDetections = [];
+
+// Single person tracking with face descriptors
+let trackedPersonDescriptor = null; // 128-dimension face descriptor (unique "fingerprint")
+let personLocked = false;
+let framesWithoutPerson = 0;
+let maxFramesWithoutPerson = 60; // ~2 seconds at 30fps - balanced between temporary exit and true exit
+let maxFramesOutsideCanvas = 20; // ~0.67 seconds - unlock faster if person leaves canvas boundaries
+let descriptorMatchThreshold = 0.6; // Euclidean distance threshold for same person (lower = stricter)
+let strictDescriptorThreshold = 0.50; // Very strict threshold when relocking to prevent person switching (lowered from 0.55)
+// Spatial tracking for canvas boundaries
+let lastKnownNosePosition = null; // Track last position to detect out-of-bounds
+let framesOutsideCanvas = 0; // Count frames where detected faces are outside canvas
 // Mobile responsiveness variables
 let isMobile = false;
 let scaleFactor = 1;
@@ -57,7 +57,6 @@ let currentBrand = ''; // Track which brand the current word belongs to
 let wordProgress = {};
 let currentLetterIndex = 0; // Track which letter we're currently working on
 let isRunning = false;
-let faceDetected = false;
 // Letter completion delay system
 let letterCompletionTimers = {}; // Track completion timers for each letter
 let completionDelayMs = 400; // 0.4 second delay before marking letter as complete (faster response)
@@ -322,7 +321,57 @@ function initializeFrontScreen() {
         });
     }
     
+    // Preload face-api.js models in background while user sees opening screen
+    preloadFaceModels();
+    
     // Front screen initialized
+}
+
+// Preload face detection models on opening screen (smart loading!)
+async function preloadFaceModels() {
+    if (faceApiModelsLoaded) return; // Already loaded
+    
+    const preloadIndicator = document.getElementById('preloadIndicator');
+    
+    try {
+        console.log('🚀 Preloading face-api.js models in background...');
+        
+        // Show loading indicator
+        if (preloadIndicator) {
+            preloadIndicator.style.display = 'flex';
+        }
+        
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        
+        // Load all 3 models in parallel while user is on opening screen
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        
+        faceApiModelsLoaded = true;
+        console.log('✅ Face detection models preloaded successfully! Game will start instantly.');
+        
+        // Hide loading indicator with fade out
+        if (preloadIndicator) {
+            preloadIndicator.classList.add('hidden');
+            setTimeout(() => {
+                preloadIndicator.style.display = 'none';
+            }, 300); // Match CSS transition duration
+        }
+        
+    } catch (error) {
+        console.warn('⚠️ Preload failed, will load on game start:', error);
+        // Hide indicator even if failed
+        if (preloadIndicator) {
+            preloadIndicator.classList.add('hidden');
+            setTimeout(() => {
+                preloadIndicator.style.display = 'none';
+            }, 300);
+        }
+        // Not critical - will load when game starts if preload fails
+    }
 }
 
 async function startGame() {
@@ -551,15 +600,14 @@ function cleanupGameResources() {
         video = null;
     }
     
-    // Clear pose detection and stop model
-    if (poseNet) {
-        try {
-            poseNet.removeAllListeners();
-        } catch (e) {
-            // PoseNet cleanup completed
-        }
-        poseNet = null;
+    // Clear face detection interval
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+        detectionInterval = null;
     }
+    
+    // Reset face tracking
+    unlockPerson();
     
     // Hide and clean up canvas
     const canvas = document.getElementById('canvas');
@@ -772,171 +820,255 @@ async function initializeCamera() {
     });
 }
 
-function videoReady() {
+async function videoReady() {
     isVideoReady = true;
     
-    // Hide loading screen when camera is ready
-    if (loadingScreenElement) {
-        loadingScreenElement.style.display = 'none';
-    }
-    
-    // Use the correct PoseNet API for ml5.js v0.12.2x
-    // Configured for single-person tracking to prevent switching between multiple people
-    poseNet = ml5.poseNet(video, {
-        architecture: 'MobileNetV1',
-        imageScaleFactor: 0.3,
-        outputStride: 16,
-        flipHorizontal: false,
-        minConfidence: 0.5,
-        maxPoseDetections: 1, // Only detect one person at a time
-        scoreThreshold: 0.5,
-        nmsRadius: 20,
-        detectionType: 'single', // Single pose detection mode
-        inputResolution: 513,
-        multiplier: 0.75,
-        quantBytes: 2
-    }, modelReady);
-    
-    // Listen for pose detection results
-    poseNet.on('pose', gotPoses);
-}
-
-// Helper function to calculate face center from multiple keypoints
-function calculateFaceCenter(pose) {
-    if (!pose || !pose.pose) return null;
-    
-    // Use direct access to facial keypoints as per ml5.js documentation
-    const p = pose.pose;
-    const nose = p.nose;
-    const leftEye = p.leftEye;
-    const rightEye = p.rightEye;
-    const leftEar = p.leftEar;
-    const rightEar = p.rightEar;
-    
-    // Check if nose exists and has good confidence
-    if (!nose || !nose.confidence || nose.confidence < 0.15) return null;
-    
-    // Collect valid facial keypoints for face center calculation
-    let points = [];
-    if (nose && nose.confidence > 0.3) points.push({ x: nose.x, y: nose.y });
-    if (leftEye && leftEye.confidence > 0.3) points.push({ x: leftEye.x, y: leftEye.y });
-    if (rightEye && rightEye.confidence > 0.3) points.push({ x: rightEye.x, y: rightEye.y });
-    if (leftEar && leftEar.confidence > 0.2) points.push({ x: leftEar.x, y: leftEar.y });
-    if (rightEar && rightEar.confidence > 0.2) points.push({ x: rightEar.x, y: rightEar.y });
-    
-    // Need at least the nose
-    if (points.length === 0) return null;
-    
-    // Calculate average position (face center)
-    let sumX = 0, sumY = 0;
-    for (let point of points) {
-        sumX += point.x;
-        sumY += point.y;
-    }
-    
-    return {
-        x: sumX / points.length,
-        y: sumY / points.length,
-        noseX: nose.x,
-        noseY: nose.y,
-        noseScore: nose.confidence
-    };
-}
-
-function gotPoses(results) {
-    if (!poseTrackingEnabled || results.length === 0) {
-    poses = results;
-        return;
-    }
-    
-    // Since PoseNet is in single-person mode, we only get poses[0]
-    // Just check if this ONE person is the same person we're tracking
-    const currentPose = results[0];
-    const faceCenter = calculateFaceCenter(currentPose);
-    
-    // No valid face detected - more lenient threshold to handle fast movement
-    if (!faceCenter || faceCenter.noseScore < 0.15) {
-        poses = [];
-        return;
-    }
-    
-    // If we haven't locked onto a person yet, IMMEDIATELY lock onto this person
-    if (!personLocked || lastTrackedNoseX === null || lastTrackedNoseY === null) {
-        // IMMEDIATE LOCK onto the first person detected
-        personLocked = true;
-        lastTrackedNoseX = faceCenter.noseX;
-        lastTrackedNoseY = faceCenter.noseY;
-        lastTrackedFaceCenterX = faceCenter.x;
-        lastTrackedFaceCenterY = faceCenter.y;
-        lockStrength = 0; // Start with weak lock, will strengthen
-        poses = [currentPose];
-        framesWithoutPerson = 0;
-        return;
-    }
-    
-    // We have a locked person - check if poses[0] is the SAME person
-    // Gradually strengthen the lock over time (but keep it reasonable)
-    lockStrength = Math.min(100, lockStrength + 1); // Slower increase for less aggressive locking
-    
-    // Calculate distance from last tracked nose position
-    let noseDistance = Math.sqrt(
-        Math.pow(faceCenter.noseX - lastTrackedNoseX, 2) + 
-        Math.pow(faceCenter.noseY - lastTrackedNoseY, 2)
-    );
-    
-    // Track velocity for adaptive thresholds
-    velocityHistory.push(noseDistance);
-    if (velocityHistory.length > 5) velocityHistory.shift();
-    const avgVelocity = velocityHistory.reduce((a, b) => a + b, 0) / velocityHistory.length;
-    lastNoseVelocity = avgVelocity;
-    
-    // Also check face center distance for additional validation
-    let faceCenterDistance = Math.sqrt(
-        Math.pow(faceCenter.x - lastTrackedFaceCenterX, 2) + 
-        Math.pow(faceCenter.y - lastTrackedFaceCenterY, 2)
-    );
-    
-    // VELOCITY-AWARE thresholds: increase threshold during fast movement
-    const velocityMultiplier = Math.max(1.0, Math.min(3.0, 1.0 + (avgVelocity / 50)));
-    // Lock strength has minimal impact now - only tightens by 20% max
-    const strengthMultiplier = 1.0 - (lockStrength / 500); // 1.0 to 0.8 over time
-    const currentNoseThreshold = maxNoseJumpDistance * velocityMultiplier * Math.max(0.8, strengthMultiplier);
-    const currentFaceCenterThreshold = maxFaceCenterJumpDistance * velocityMultiplier * Math.max(0.8, strengthMultiplier);
-    
-    // More lenient: Accept if EITHER nose OR face center is within threshold during fast movement
-    // Only require both during slow/stopped movement
-    const isFastMovement = avgVelocity > 15;
-    const isWithinThreshold = isFastMovement 
-        ? (noseDistance < currentNoseThreshold || faceCenterDistance < currentFaceCenterThreshold)
-        : (noseDistance < currentNoseThreshold && faceCenterDistance < currentFaceCenterThreshold);
-    
-    if (isWithinThreshold) {
-        // Same person! Accept and update tracking
-        const smoothingFactor = 0.7; // Smooth the tracking
-        lastTrackedNoseX = lastTrackedNoseX * (1 - smoothingFactor) + faceCenter.noseX * smoothingFactor;
-        lastTrackedNoseY = lastTrackedNoseY * (1 - smoothingFactor) + faceCenter.noseY * smoothingFactor;
-        lastTrackedFaceCenterX = lastTrackedFaceCenterX * (1 - smoothingFactor) + faceCenter.x * smoothingFactor;
-        lastTrackedFaceCenterY = lastTrackedFaceCenterY * (1 - smoothingFactor) + faceCenter.y * smoothingFactor;
+    // Check if models were already preloaded on opening screen
+    if (!faceApiModelsLoaded) {
+        // Models not preloaded, load them now
+        updateLoadingText('Loading face detection AI...');
         
-        poses = [currentPose];
-        framesWithoutPerson = 0; // Reset counter
+        try {
+            console.log('Loading face-api.js models...');
+            
+            const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+            
+            // Load all models in parallel
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
+            
+            faceApiModelsLoaded = true;
+            console.log('Face-api.js models loaded successfully!');
+            
+        } catch (error) {
+            console.error('Error loading face-api.js models:', error);
+            updateLoadingText('Failed to load. Please refresh the page.');
+            setTimeout(() => {
+                alert('Failed to load face detection models. Please refresh the page.');
+            }, 100);
+            return;
+        }
     } else {
-        // Different person detected! REJECT this pose
-        framesWithoutPerson++;
-        
-        // If locked person has been gone too long, unlock so we can lock onto a new person
-        if (framesWithoutPerson > maxFramesWithoutPerson) {
-            personLocked = false;
-            lastTrackedNoseX = null;
-            lastTrackedNoseY = null;
-            lastTrackedFaceCenterX = null;
-            lastTrackedFaceCenterY = null;
-            lockStrength = 0;
-            framesWithoutPerson = 0;
+        console.log('✅ Using preloaded models - instant start!');
+    }
+    
+    // Start detection loop (whether models were preloaded or just loaded)
+    updateLoadingText('Starting game...');
+    startFaceDetection();
+    
+    // Small delay to ensure first detection runs
+    setTimeout(() => {
+        // Hide loading screen
+        if (loadingScreenElement) {
+            loadingScreenElement.style.display = 'none';
+        }
+        modelReady();
+    }, 300); // Reduced from 500ms since models are already loaded
+}
+
+// Start continuous face detection (optimized for speed)
+function startFaceDetection() {
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+    }
+    
+    // Run detection every 100ms (10 FPS) with optimized settings
+    detectionInterval = setInterval(async () => {
+        if (!isVideoReady || !faceApiModelsLoaded || !video || !video.elt) {
+            return;
         }
         
-        poses = []; // Reject this pose - it's not the tracked person
+        try {
+            // Detect faces with optimized settings for speed
+            const detections = await faceapi
+                .detectAllFaces(video.elt, new faceapi.TinyFaceDetectorOptions({
+                    inputSize: 160,        // Reduced from 224 for faster detection (20-30% faster!)
+                    scoreThreshold: 0.4     // Slightly lower for better detection during fast movement
+                }))
+                .withFaceLandmarks(true)
+                .withFaceDescriptors();
+            
+            currentDetections = detections;
+            processFaceDetections(detections);
+            
+        } catch (error) {
+            console.error('Face detection error:', error);
+        }
+    }, 100);
+}
+
+/**
+ * FACE TRACKING WITH FACE-API.JS
+ * Uses 128-dimension face descriptors (unique "fingerprint") for reliable person identification
+ * Much more accurate than geometry-based matching!
+ */
+
+function processFaceDetections(detections) {
+    // No faces detected
+    if (!detections || detections.length === 0) {
+        faceDetected = false;
+        framesWithoutPerson++;
+        framesOutsideCanvas++; // Also count as outside canvas
+        
+        // Quick unlock if person was last seen near boundaries and now gone
+        if (lastKnownNosePosition && framesOutsideCanvas > maxFramesOutsideCanvas && personLocked) {
+            console.log('⚡ Fast unlock: Person moved outside canvas boundaries');
+            unlockPerson();
+            return;
+        }
+        
+        // Standard unlock if person has been gone too long
+        if (framesWithoutPerson > maxFramesWithoutPerson && personLocked) {
+            unlockPerson();
+        }
+        return;
     }
+    
+    // Check if any detected face is within canvas boundaries
+    const videoWidth = video ? video.width : 640;
+    const videoHeight = video ? video.height : 480;
+    let anyFaceInBounds = false;
+    
+    for (const detection of detections) {
+        const box = detection.detection.box;
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        
+        // Check if face center is within video boundaries (with small margin)
+        const margin = 50; // Allow 50px outside before considering "out of bounds"
+        if (centerX > -margin && centerX < videoWidth + margin &&
+            centerY > -margin && centerY < videoHeight + margin) {
+            anyFaceInBounds = true;
+            break;
+        }
+    }
+    
+    // If all detected faces are outside canvas, increment counter
+    if (!anyFaceInBounds) {
+        framesOutsideCanvas++;
+        if (framesOutsideCanvas > maxFramesOutsideCanvas && personLocked) {
+            console.log('⚡ Fast unlock: All detected faces outside canvas boundaries');
+            unlockPerson();
+            return;
+        }
+    } else {
+        framesOutsideCanvas = 0; // Reset if face found within bounds
+    }
+    
+    // ============================================================
+    // STEP 1: NOT LOCKED - Lock to first detected person
+    // ============================================================
+    if (!personLocked || !trackedPersonDescriptor) {
+        const firstPerson = detections[0];
+        
+        // Store their face descriptor (128-dim vector - unique fingerprint!)
+        trackedPersonDescriptor = firstPerson.descriptor;
+        personLocked = true;
+        framesWithoutPerson = 0;
+        framesOutsideCanvas = 0;
+        
+        // Get nose position from landmarks
+        updateNosePosition(firstPerson);
+        lastKnownNosePosition = { x: noseX, y: noseY };
+        
+        console.log('🔒 Locked onto person! This person will be tracked exclusively.');
+        return;
+    }
+    
+    // ============================================================
+    // STEP 2: LOCKED - Find the SAME person in current detections
+    // ============================================================
+    
+    // Compare all detected faces with tracked person's descriptor
+    let bestMatch = null;
+    let bestDistance = Infinity;
+    
+    for (const detection of detections) {
+        // Calculate Euclidean distance between descriptors
+        const distance = faceapi.euclideanDistance(trackedPersonDescriptor, detection.descriptor);
+        
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestMatch = detection;
+        }
+    }
+    
+    // ============================================================
+    // STEP 3: Accept or Reject based on descriptor match
+    // ============================================================
+    
+    // Use STRICTER threshold if person was missing (prevents locking onto someone else when you return)
+    // Use NORMAL threshold if person is being tracked continuously (handles fast movement better)
+    const wasRecentlyMissing = framesWithoutPerson > 5; // Missing for more than 0.5 seconds
+    const currentThreshold = wasRecentlyMissing ? strictDescriptorThreshold : descriptorMatchThreshold;
+    
+    if (bestMatch && bestDistance < currentThreshold) {
+        // SAME PERSON! Update tracking
+        faceDetected = true;
+        framesWithoutPerson = 0;
+        framesOutsideCanvas = 0; // Reset since person is found
+        
+        // Slowly update the tracked descriptor (adapts to angle/expression changes)
+        const descriptorSmoothing = 0.05;
+        for (let i = 0; i < trackedPersonDescriptor.length; i++) {
+            trackedPersonDescriptor[i] = 
+                trackedPersonDescriptor[i] * (1 - descriptorSmoothing) + 
+                bestMatch.descriptor[i] * descriptorSmoothing;
+        }
+        
+        // Update nose position
+        updateNosePosition(bestMatch);
+        lastKnownNosePosition = { x: noseX, y: noseY };
+        
+        // Log when reacquiring after being missing
+        if (wasRecentlyMissing) {
+            console.log(`✅ Reacquired tracked person (distance: ${bestDistance.toFixed(3)})`);
+        }
+        
+    } else {
+        // DIFFERENT PERSON or no good match
+        faceDetected = false;
+        framesWithoutPerson++;
+        
+        // Log when rejecting during missing period
+        if (bestMatch && wasRecentlyMissing) {
+            console.log(`❌ Rejected face while person missing (distance: ${bestDistance.toFixed(3)}, threshold: ${currentThreshold.toFixed(3)})`);
+        }
+        
+        // Unlock if wrong person for too long (3 seconds)
+        if (framesWithoutPerson > maxFramesWithoutPerson) {
+            unlockPerson();
+            console.log('⚠️ Person lost for too long - unlocking...');
+        }
+    }
+}
+
+// Extract nose position from face landmarks
+function updateNosePosition(detection) {
+    if (!detection || !detection.landmarks) return;
+    
+    // Get nose tip landmark (landmark 30 is nose tip in 68-point model)
+    const noseTip = detection.landmarks.getNose()[3]; // Center of nose
+    
+    // Update nose position in video coordinates
+    noseX = noseTip.x;
+    noseY = noseTip.y;
+}
+
+// Unlock person and reset tracking
+function unlockPerson() {
+    if (personLocked) {
+        console.log('🔓 Unlocking person - ready to track new person');
+    }
+    personLocked = false;
+    trackedPersonDescriptor = null;
+    framesWithoutPerson = 0;
+    framesOutsideCanvas = 0;
+    lastKnownNosePosition = null;
+    faceDetected = false;
 }
 
 function modelReady() {
@@ -1288,10 +1420,8 @@ function draw() {
         // Draw trail FIRST (so it appears behind the nose dot)
         drawNoseTrail();
 
-        // Draw poses if detected
-        if (poses.length > 0) {
-            drawNose(poses[0]);
-        }
+        // Draw nose if face is detected
+        drawNose();
 
         pop();
         
@@ -1691,62 +1821,48 @@ function transformNoseCoordinates(videoX, videoY) {
     return { x: canvasX, y: canvasY };
 }
 
-function drawNose(pose) {
-    // Check if pose exists - use ml5.js direct access method
-    if (!pose || !pose.pose) {
-        faceDetected = false;
+function drawNose() {
+    // Check if face is detected and person is locked
+    if (!faceDetected || !personLocked || !noseX || !noseY) {
         return;
     }
     
-    // Direct access to nose as per ml5.js documentation
-    let nose = pose.pose.nose;
+    // Transform coordinates from video space to canvas space
+    const transformed = transformNoseCoordinates(noseX, noseY);
+    let targetX = transformed.x;
+    let targetY = transformed.y;
     
-    if (nose && nose.confidence > 0.15) {
-        let videoX = nose.x;
-        let videoY = nose.y;
-        
-        // Note: Pose tracking is now handled in gotPoses() function using face center
-        // This ensures we track the same person across frames
-        // Transform coordinates from video space to canvas space
-        const transformed = transformNoseCoordinates(videoX, videoY);
-        let targetX = transformed.x;
-        let targetY = transformed.y;
-        
-        // Use enhanced smoothing function
-        const smoothedPos = smoothNosePosition(targetX, targetY);
-        noseX = smoothedPos.x;
-        noseY = smoothedPos.y;
-        
-        // Add to trail BEFORE drawing the nose dot
-        addToTrail(noseX, noseY);
-        
-        // Draw current nose position - responsive size
-        push();
-        
-        // Use integer positions to prevent sub-pixel rendering issues
-        const drawX = Math.round(noseX);
-        const drawY = Math.round(noseY);
-        
-        // Responsive nose dot size with better scaling - smaller and more subtle
-        const baseNoseSize = 30;
-        const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
-        
-        // Main nose dot - smaller and more subtle to avoid interfering with letters
-        fill(255, 50, 50, 180); // Semi-transparent red
-        noStroke();
-        ellipse(drawX, drawY, noseDotSize);
-        
-        // Add a subtle white center for better visibility
-        fill(255, 255, 255, 120);
-        ellipse(drawX, drawY, noseDotSize * 0.6);
-        
-        pop();
-        
-        faceDetected = true;
-        updateNoseIndicator();
-    } else {
-        faceDetected = false;
-    }
+    // Use enhanced smoothing function
+    const smoothedPos = smoothNosePosition(targetX, targetY);
+    const smoothedX = smoothedPos.x;
+    const smoothedY = smoothedPos.y;
+    
+    // Add to trail BEFORE drawing the nose dot
+    addToTrail(smoothedX, smoothedY);
+    
+    // Draw current nose position - responsive size
+    push();
+    
+    // Use integer positions to prevent sub-pixel rendering issues
+    const drawX = Math.round(smoothedX);
+    const drawY = Math.round(smoothedY);
+    
+    // Responsive nose dot size with better scaling - smaller and more subtle
+    const baseNoseSize = 30;
+    const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
+    
+    // Main nose dot - smaller and more subtle to avoid interfering with letters
+    fill(255, 50, 50, 180); // Semi-transparent red
+    noStroke();
+    ellipse(drawX, drawY, noseDotSize);
+    
+    // Add a subtle white center for better visibility
+    fill(255, 255, 255, 120);
+    ellipse(drawX, drawY, noseDotSize * 0.6);
+    
+    pop();
+    
+    updateNoseIndicator();
 }
 
 function addToTrail(x, y) {

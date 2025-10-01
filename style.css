@@ -68,6 +68,42 @@ body {
     z-index: 1;
 }
 
+/* Preload Indicator on Opening Screen */
+.preload-indicator {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px 20px;
+    border-radius: 20px;
+    z-index: 10;
+    opacity: 1;
+    transition: opacity 0.3s ease-out;
+}
+
+.preload-indicator.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.preload-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.preload-text {
+    color: white;
+    font-size: 14px;
+    font-family: 'TikTok-Sans-Text-Bold', Arial, sans-serif;
+}
+
 /* Loading Screen */
 .loading-screen {
     position: absolute;
