@@ -18,14 +18,17 @@ let lastTrackedNoseX = null;
 let lastTrackedNoseY = null;
 let lastTrackedFaceCenterX = null; // Track center of face for better person identification
 let lastTrackedFaceCenterY = null;
-let maxNoseJumpDistance = 80; // VERY strict - maximum pixel distance to allow nose to jump (reduced from 100)
-let maxFaceCenterJumpDistance = 90; // VERY strict - maximum distance for face center to move (reduced from 120)
+let maxNoseJumpDistance = 200; // Increased to allow fast movements (was 80)
+let maxFaceCenterJumpDistance = 180; // Increased to allow fast movements (was 90)
 let poseTrackingEnabled = true;
 let personLocked = false; // Flag to indicate we've locked onto a person
 let framesWithoutPerson = 0; // Count frames without detecting the locked person
-let maxFramesWithoutPerson = 45; // Unlock after 45 frames (~1.5 seconds at 30fps) without detecting person (increased tolerance)
+let maxFramesWithoutPerson = 8; // Reduced - unlock faster if truly lost (was 45)
 let consecutiveFramesWithPerson = 0; // Count frames to confirm person before locking
 let lockStrength = 0; // Gradually increase lock strength (0-100)
+// Velocity tracking for adaptive thresholds during fast movement
+let lastNoseVelocity = 0;
+let velocityHistory = [];
 // Mobile responsiveness variables
 let isMobile = false;
 let scaleFactor = 1;
@@ -390,7 +393,11 @@ async function startGame() {
 async function requestCameraAccess() {
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia({ 
-            video: true // Use simple video constraint like p5.js does
+            video: {
+                width: { ideal: 1080 },  // try to get tall shape
+                height: { ideal: 1920 }, // 9:16 portrait
+                facingMode: "user"       // webcam or selfie (adjust as needed)
+            }
         })
         .then(stream => {
             // Store the stream for later use
@@ -807,7 +814,7 @@ function calculateFaceCenter(pose) {
     const rightEar = p.rightEar;
     
     // Check if nose exists and has good confidence
-    if (!nose || !nose.confidence || nose.confidence < 0.3) return null;
+    if (!nose || !nose.confidence || nose.confidence < 0.15) return null;
     
     // Collect valid facial keypoints for face center calculation
     let points = [];
@@ -847,8 +854,8 @@ function gotPoses(results) {
     const currentPose = results[0];
     const faceCenter = calculateFaceCenter(currentPose);
     
-    // No valid face detected
-    if (!faceCenter || faceCenter.noseScore < 0.35) {
+    // No valid face detected - more lenient threshold to handle fast movement
+    if (!faceCenter || faceCenter.noseScore < 0.15) {
         poses = [];
         return;
     }
@@ -868,13 +875,8 @@ function gotPoses(results) {
     }
     
     // We have a locked person - check if poses[0] is the SAME person
-    // Gradually strengthen the lock over time (makes it harder to switch)
-    lockStrength = Math.min(100, lockStrength + 2); // Increase by 2 each frame, max 100
-    
-    // Apply lock strength to thresholds - stronger lock = tighter thresholds
-    const strengthMultiplier = 1.0 - (lockStrength / 200); // 1.0 to 0.5 over time
-    const currentNoseThreshold = maxNoseJumpDistance * Math.max(0.6, strengthMultiplier);
-    const currentFaceCenterThreshold = maxFaceCenterJumpDistance * Math.max(0.6, strengthMultiplier);
+    // Gradually strengthen the lock over time (but keep it reasonable)
+    lockStrength = Math.min(100, lockStrength + 1); // Slower increase for less aggressive locking
     
     // Calculate distance from last tracked nose position
     let noseDistance = Math.sqrt(
@@ -882,15 +884,33 @@ function gotPoses(results) {
         Math.pow(faceCenter.noseY - lastTrackedNoseY, 2)
     );
     
+    // Track velocity for adaptive thresholds
+    velocityHistory.push(noseDistance);
+    if (velocityHistory.length > 5) velocityHistory.shift();
+    const avgVelocity = velocityHistory.reduce((a, b) => a + b, 0) / velocityHistory.length;
+    lastNoseVelocity = avgVelocity;
+    
     // Also check face center distance for additional validation
     let faceCenterDistance = Math.sqrt(
         Math.pow(faceCenter.x - lastTrackedFaceCenterX, 2) + 
         Math.pow(faceCenter.y - lastTrackedFaceCenterY, 2)
     );
     
-    // VERY STRICT: Both nose AND face center must be within threshold
-    // If either is too far, this is a DIFFERENT person - REJECT
-    if (noseDistance < currentNoseThreshold && faceCenterDistance < currentFaceCenterThreshold) {
+    // VELOCITY-AWARE thresholds: increase threshold during fast movement
+    const velocityMultiplier = Math.max(1.0, Math.min(3.0, 1.0 + (avgVelocity / 50)));
+    // Lock strength has minimal impact now - only tightens by 20% max
+    const strengthMultiplier = 1.0 - (lockStrength / 500); // 1.0 to 0.8 over time
+    const currentNoseThreshold = maxNoseJumpDistance * velocityMultiplier * Math.max(0.8, strengthMultiplier);
+    const currentFaceCenterThreshold = maxFaceCenterJumpDistance * velocityMultiplier * Math.max(0.8, strengthMultiplier);
+    
+    // More lenient: Accept if EITHER nose OR face center is within threshold during fast movement
+    // Only require both during slow/stopped movement
+    const isFastMovement = avgVelocity > 15;
+    const isWithinThreshold = isFastMovement 
+        ? (noseDistance < currentNoseThreshold || faceCenterDistance < currentFaceCenterThreshold)
+        : (noseDistance < currentNoseThreshold && faceCenterDistance < currentFaceCenterThreshold);
+    
+    if (isWithinThreshold) {
         // Same person! Accept and update tracking
         const smoothingFactor = 0.7; // Smooth the tracking
         lastTrackedNoseX = lastTrackedNoseX * (1 - smoothingFactor) + faceCenter.noseX * smoothingFactor;
@@ -1681,7 +1701,7 @@ function drawNose(pose) {
     // Direct access to nose as per ml5.js documentation
     let nose = pose.pose.nose;
     
-    if (nose && nose.confidence > 0.2) {
+    if (nose && nose.confidence > 0.15) {
         let videoX = nose.x;
         let videoY = nose.y;
         
