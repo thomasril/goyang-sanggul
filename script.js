@@ -11,7 +11,6 @@ let noseHistory = []; // Store recent nose positions for better smoothing
 let maxHistoryLength = 10;
 // Trail functionality restored
 let noseTrail = [];
-let maxTrailLength = 200; // Reduced from 500 to prevent memory issues
 let isVideoReady = false;
 let isModelReady = false;
 // Pose tracking variables to prevent switching between people
@@ -53,13 +52,191 @@ for (let brand in brandWords) {
 let currentWord = '';
 let currentBrand = ''; // Track which brand the current word belongs to
 let wordProgress = {};
-let letterPaintedAreas = {};
 let currentLetterIndex = 0; // Track which letter we're currently working on
 let isRunning = false;
 let faceDetected = false;
 // Letter completion delay system
 let letterCompletionTimers = {}; // Track completion timers for each letter
-let completionDelayMs = 2000; // 1 second delay before marking letter as complete
+let completionDelayMs = 400; // 0.4 second delay before marking letter as complete (faster response)
+// Checkpoint-based letter completion system
+let letterCheckpoints = {}; // Track which checkpoints have been hit for each letter
+let checkpointDefinitions = {
+    // Each letter has checkpoints defined as relative positions (0-1 scale)
+    // Format: { x: horizontal position (0=left, 1=right), y: vertical position (0=top, 1=bottom) }
+    'A': [
+        { x: 0.5, y: 0.0, label: 'top' },        // Top point
+        { x: 0.0, y: 1.0, label: 'bottomLeft' }, // Bottom left
+        { x: 1.0, y: 1.0, label: 'bottomRight' }, // Bottom right
+        { x: 0.5, y: 0.6, label: 'crossBar' }    // Cross bar center
+    ],
+    'B': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.0, y: 0.5, label: 'middleLeft' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.8, y: 0.25, label: 'topBump' },
+        { x: 0.8, y: 0.75, label: 'bottomBump' }
+    ],
+    'C': [
+        { x: 1.0, y: 0.2, label: 'topRight' },
+        { x: 0.2, y: 0.0, label: 'top' },
+        { x: 0.0, y: 0.5, label: 'left' },
+        { x: 0.2, y: 1.0, label: 'bottom' },
+        { x: 1.0, y: 0.8, label: 'bottomRight' }
+    ],
+    'D': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.0, y: 0.5, label: 'middleLeft' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.7, y: 0.25, label: 'topCurve' },
+        { x: 0.7, y: 0.75, label: 'bottomCurve' }
+    ],
+    'E': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.8, y: 0.0, label: 'topRight' },
+        { x: 0.0, y: 0.5, label: 'middle' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.8, y: 1.0, label: 'bottomRight' }
+    ],
+    'F': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 0.0, y: 0.5, label: 'middle' },
+        { x: 0.7, y: 0.5, label: 'middleRight' },
+        { x: 0.0, y: 1.0, label: 'bottom' }
+    ],
+    'G': [
+        { x: 0.8, y: 0.2, label: 'topRight' },
+        { x: 0.2, y: 0.0, label: 'top' },
+        { x: 0.0, y: 0.5, label: 'left' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 0.8, y: 0.7, label: 'bottomRight' }
+    ],
+    'H': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' }
+    ],
+    'I': [
+        { x: 0.5, y: 0.0, label: 'top' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 0.5, y: 1.0, label: 'bottom' }
+    ],
+    'J': [
+        { x: 0.8, y: 0.0, label: 'top' },
+        { x: 0.8, y: 0.7, label: 'middleRight' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 0.2, y: 0.8, label: 'bottomLeft' }
+    ],
+    'K': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.0, y: 0.5, label: 'middle' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' }
+    ],
+    'L': [
+        { x: 0.0, y: 0.0, label: 'top' },        // Top of vertical line
+        { x: 0.0, y: 1.0, label: 'bottomLeft' }, // Bottom left corner
+        { x: 1.0, y: 1.0, label: 'bottomRight' } // Bottom right end
+    ],
+    'M': [
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' }
+    ],
+    'N': [
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' },
+        { x: 1.0, y: 0.0, label: 'topRight' }
+    ],
+    'O': [
+        { x: 0.5, y: 0.0, label: 'top' },
+        { x: 0.0, y: 0.5, label: 'left' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 1.0, y: 0.5, label: 'right' }
+    ],
+    'P': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.7, y: 0.2, label: 'topRight' },
+        { x: 0.0, y: 0.5, label: 'middle' },
+        { x: 0.7, y: 0.5, label: 'middleRight' },
+        { x: 0.0, y: 1.0, label: 'bottom' }
+    ],
+    'Q': [
+        { x: 0.5, y: 0.0, label: 'top' },
+        { x: 0.0, y: 0.5, label: 'left' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 1.0, y: 0.5, label: 'right' },
+        { x: 1.0, y: 1.0, label: 'tail' }
+    ],
+    'R': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.7, y: 0.2, label: 'topRight' },
+        { x: 0.0, y: 0.5, label: 'middle' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 0.9, y: 1.0, label: 'bottomRight' }
+    ],
+    'S': [
+        { x: 0.8, y: 0.2, label: 'topRight' },
+        { x: 0.2, y: 0.2, label: 'topLeft' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 0.2, y: 0.8, label: 'bottomLeft' },
+        { x: 0.8, y: 0.8, label: 'bottomRight' }
+    ],
+    'T': [
+        { x: 0.2, y: 0.0, label: 'topLeft' },    // Left part of horizontal bar
+        { x: 0.8, y: 0.0, label: 'topRight' },   // Right part of horizontal bar
+        { x: 0.5, y: 0.5, label: 'middle' },     // Middle of vertical stem
+        { x: 0.5, y: 1.0, label: 'bottom' }      // Bottom of vertical stem
+    ],
+    'U': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.0, y: 0.8, label: 'bottomLeft' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 1.0, y: 0.8, label: 'bottomRight' },
+        { x: 1.0, y: 0.0, label: 'topRight' }
+    ],
+    'V': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.3, y: 0.5, label: 'middleLeft' },
+        { x: 0.5, y: 1.0, label: 'bottom' },
+        { x: 0.7, y: 0.5, label: 'middleRight' },
+        { x: 1.0, y: 0.0, label: 'topRight' }
+    ],
+    'W': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.25, y: 1.0, label: 'bottomLeft' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 0.75, y: 1.0, label: 'bottomRight' },
+        { x: 1.0, y: 0.0, label: 'topRight' }
+    ],
+    'X': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.5, y: 0.5, label: 'center' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' }
+    ],
+    'Y': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 0.5, y: 0.5, label: 'center' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 0.5, y: 1.0, label: 'bottom' }
+    ],
+    'Z': [
+        { x: 0.0, y: 0.0, label: 'topLeft' },
+        { x: 1.0, y: 0.0, label: 'topRight' },
+        { x: 0.5, y: 0.5, label: 'middle' },
+        { x: 0.0, y: 1.0, label: 'bottomLeft' },
+        { x: 1.0, y: 1.0, label: 'bottomRight' }
+    ]
+};
 // Performance optimization variables
 let lastFrameTime = 0;
 // UI elements
@@ -263,16 +440,6 @@ function performPeriodicCleanup() {
         noseHistory = noseHistory.slice(-5);
     }
     
-    // Clean up old painted areas (remove points older than 5 seconds)
-    const now = Date.now();
-    for (let letterIndex in letterPaintedAreas) {
-        if (letterPaintedAreas[letterIndex]) {
-            letterPaintedAreas[letterIndex] = letterPaintedAreas[letterIndex].filter(
-                point => now - point.time < 5000
-            );
-        }
-    }
-    
     // Force garbage collection if available
     if (window.gc) {
         window.gc();
@@ -402,8 +569,9 @@ function cleanupGameResources() {
     poses = [];
     noseTrail = [];
     noseHistory = [];
-    letterPaintedAreas = {};
     wordProgress = {};
+    letterCheckpoints = {}; // Reset checkpoints
+    letterCompletionTimers = {}; // Reset timers
     
     // Reset pose tracking
     lastTrackedNoseX = null;
@@ -442,8 +610,9 @@ function resetGame() {
     noseTrail = [];
     noseHistory = [];
     poses = [];
-    letterPaintedAreas = {};
     wordProgress = {};
+    letterCheckpoints = {}; // Reset checkpoints
+    letterCompletionTimers = {}; // Reset timers
     faceDetected = false;
     isRunning = false;
     wordCompletedSoundPlayed = false; // Reset sound flag
@@ -527,7 +696,7 @@ function initializeGame() {
     
     // Reset game state
     wordProgress = {};
-    letterPaintedAreas = {};
+    letterCheckpoints = {}; // Reset checkpoints
     letterCompletionTimers = {}; // Reset completion timers
     faceDetected = false;
     isRunning = true;
@@ -669,7 +838,7 @@ function calculateFaceCenter(pose) {
 
 function gotPoses(results) {
     if (!poseTrackingEnabled || results.length === 0) {
-        poses = results;
+    poses = results;
         return;
     }
     
@@ -1363,7 +1532,44 @@ function drawWordOnCanvas() {
         noStroke();
     }
     
+    // Draw checkpoints for the current letter (if not completed)
+    if (!wordProgress[actualIndex]) {
+        drawCheckpoints(currentLetter, actualIndex, wordX, wordY, fontSize);
+    }
+    
     pop();
+}
+
+// Draw checkpoint indicators for the current letter
+function drawCheckpoints(letter, letterIndex, letterCenterX, letterCenterY, fontSize) {
+    const checkpoints = checkpointDefinitions[letter.toUpperCase()];
+    if (!checkpoints) return;
+    
+    const letterWidth = fontSize * 0.8;
+    const letterHeight = fontSize;
+    const letterLeft = letterCenterX - letterWidth / 2;
+    const letterTop = letterCenterY - letterHeight / 2;
+    
+    const hitCheckpoints = letterCheckpoints[letterIndex] || {};
+    // Match the collision detection radius for visual consistency
+    const checkpointRadius = Math.max(50, fontSize * 0.25);
+    
+    checkpoints.forEach((checkpoint, idx) => {
+        const checkpointX = letterLeft + (checkpoint.x * letterWidth);
+        const checkpointY = letterTop + (checkpoint.y * letterHeight);
+        
+        const isHit = hitCheckpoints[checkpoint.label];
+        
+        // Draw checkpoint indicator
+        push();
+        
+        noFill();
+        noStroke();
+        
+        ellipse(checkpointX, checkpointY, checkpointRadius);
+        
+        pop();
+    });
 }
 
 // Helper function to convert visual letter index to actual character index
@@ -1481,7 +1687,6 @@ function drawNose(pose) {
         
         // Note: Pose tracking is now handled in gotPoses() function using face center
         // This ensures we track the same person across frames
-        
         // Transform coordinates from video space to canvas space
         const transformed = transformNoseCoordinates(videoX, videoY);
         let targetX = transformed.x;
@@ -1547,11 +1752,6 @@ function addToTrail(x, y) {
             y: Math.round(y), 
             time: Date.now()
         });
-        
-        // Prevent memory accumulation by limiting trail length
-        if (noseTrail.length > maxTrailLength) {
-            noseTrail.shift(); // Remove oldest point
-        }
     }
 }
 
@@ -1627,74 +1827,96 @@ function checkTextFilling() {
     const lettersOnly = currentWord.split('').filter(char => char !== ' ');
     if (currentLetterIndex >= lettersOnly.length) return; // All letters completed
     
+    // Get current letter character
+    const currentLetter = lettersOnly[currentLetterIndex].toUpperCase();
+    
     // Canvas-based collision detection for current letter only
     const wordX = width / 2;
     const wordY = height * 0.6; // Match the new letter position
-    const fontSize = Math.min(width * 0.15, height * 0.15); // Match the drawing font size
+    const fontSize = Math.min(width * 0.3, height * 0.3); // MUST match the drawing font size!
     
     // Convert nose position to screen coordinates (accounting for mirroring)
     const screenX = width - noseX; // Flip X coordinate
     const screenY = noseY;
-    
-    // Check if nose is over the current letter area (larger collision area for single letter)
-    const letterSize = fontSize;
-    const letterLeft = wordX - letterSize / 2;
-    const letterRight = wordX + letterSize / 2;
-    const letterTop = wordY - letterSize / 2;
-    const letterBottom = wordY + letterSize / 2;
-    
-    if (screenX >= letterLeft - 50 && screenX <= letterRight + 50 &&
-        screenY >= letterTop - 50 && screenY <= letterBottom + 50) {
         
         // Get the actual character index for the current letter
         const actualIndex = getActualLetterIndex(currentLetterIndex);
         
-        if (actualIndex >= 0 && actualIndex < currentWord.length) {
-            // Only add painted area if letter is not already completed
-            if (!wordProgress[actualIndex]) {
-                // Add painted area for this letter
-                addPaintedArea(actualIndex, screenX, screenY, letterSize);
-            }
+    if (actualIndex >= 0 && actualIndex < currentWord.length && !wordProgress[actualIndex]) {
+        // Check checkpoint-based collision for this letter
+        checkCheckpointCollision(currentLetter, actualIndex, screenX, screenY, wordX, wordY, fontSize);
+        
+        // ALWAYS check completion status (even if not hitting new checkpoints)
+        // This allows the timer to progress when you've already hit enough checkpoints
+        checkLetterCompletionByCheckpoints(actualIndex, currentLetter);
+    }
+}
+
+function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterCenterX, letterCenterY, fontSize) {
+    // Get checkpoints for this letter
+    const checkpoints = checkpointDefinitions[letter];
+    if (!checkpoints) return; // No checkpoints defined for this letter
+    
+    // Initialize checkpoint tracking for this letter if not exists
+    if (!letterCheckpoints[letterIndex]) {
+        letterCheckpoints[letterIndex] = {};
+    }
+    
+    // Define letter bounding box
+    const letterWidth = fontSize * 0.8;  // Letter width (slightly less than font size)
+    const letterHeight = fontSize;        // Letter height
+    const letterLeft = letterCenterX - letterWidth / 2;
+    const letterTop = letterCenterY - letterHeight / 2;
+    
+    // Check each checkpoint
+    checkpoints.forEach((checkpoint, idx) => {
+        // Skip if already hit
+        if (letterCheckpoints[letterIndex][checkpoint.label]) return;
+        
+        // Calculate checkpoint position in screen coordinates
+        const checkpointX = letterLeft + (checkpoint.x * letterWidth);
+        const checkpointY = letterTop + (checkpoint.y * letterHeight);
+        
+        // Check if nose is within checkpoint radius (responsive size)
+        // Increased from 15% to 25% for easier hitting
+        const checkpointRadius = Math.max(50, fontSize * 0.25); // 25% of font size for easier touch
+        const distance = Math.sqrt(
+            Math.pow(screenX - checkpointX, 2) + 
+            Math.pow(screenY - checkpointY, 2)
+        );
+        
+        if (distance < checkpointRadius) {
+            // Mark checkpoint as hit
+            letterCheckpoints[letterIndex][checkpoint.label] = true;
         }
-    }
-}
-
-function addPaintedArea(letterIndex, screenX, screenY, letterWidth) {
-    // Initialize painted areas for this letter if not exists
-    if (!letterPaintedAreas[letterIndex]) {
-        letterPaintedAreas[letterIndex] = [];
-    }
-    
-    // Calculate position within the letter
-    const wordX = width / 2;
-    const wordY = height * 0.6; // Match the new letter position
-    const fontSize = Math.min(width * 0.12, height * 0.12);
-    const startX = wordX - (currentWord.length * letterWidth) / 2;
-    
-    const letterStartX = startX + (letterIndex * letterWidth);
-    const relativeLetterX = screenX - letterStartX;
-    const relativeLetterY = screenY - wordY;
-    
-    // Add painted point with timestamp
-    letterPaintedAreas[letterIndex].push({
-        x: relativeLetterX,
-        y: relativeLetterY,
-        time: Date.now(),
-        delayTime: Date.now() + 100 // Small delay for visual effect
     });
-    
-    // Check if letter is complete
-    checkLetterCompletion(letterIndex, letterWidth);
 }
 
-function checkLetterCompletion(letterIndex, letterWidth) {
-    const paintedPoints = letterPaintedAreas[letterIndex];
-    
-    // Check if letter is already completed to prevent multiple completions
+
+function checkLetterCompletionByCheckpoints(letterIndex, letter) {
+    // Check if letter is already completed
     if (wordProgress[letterIndex]) return;
     
-    // Check if letter meets completion criteria
-    if (paintedPoints && paintedPoints.length >= 10) {
+    const checkpoints = checkpointDefinitions[letter];
+    if (!checkpoints) return;
+    
+    const hitCheckpoints = letterCheckpoints[letterIndex] || {};
+    
+    // Count how many checkpoints have been hit
+    let hitCount = 0;
+    checkpoints.forEach(checkpoint => {
+        if (hitCheckpoints[checkpoint.label]) {
+            hitCount++;
+        }
+    });
+    
+    // Calculate completion percentage
+    const completionPercentage = hitCount / checkpoints.length;
+    
+    // Require at least 65% of checkpoints to be hit (more forgiving - easier to complete)
+    const requiredPercentage = 0.65;
+    
+    if (completionPercentage >= requiredPercentage) {
         // Start completion timer if not already started
         if (!letterCompletionTimers[letterIndex]) {
             letterCompletionTimers[letterIndex] = Date.now();
@@ -1702,62 +1924,53 @@ function checkLetterCompletion(letterIndex, letterWidth) {
         
         // Check if enough time has passed
         const timeElapsed = Date.now() - letterCompletionTimers[letterIndex];
-        if (timeElapsed >= completionDelayMs) {
-            // Mark letter as complete after delay
-            delete letterCompletionTimers[letterIndex]; // Clean up timer
-        wordProgress[letterIndex] = true;
         
-        // Play letter completion sound with fallback
-        if (correctWordSound) {
-            try {
-                // Reset audio to beginning
-                correctWordSound.currentTime = 0;
-                
-                // Try to play the sound
-                const playPromise = correctWordSound.play();
-                
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        // Sound playing successfully
-                    }).catch((error) => {
-                        // Fallback: play a simple beep sound
-                        playFallbackLetterSound();
-                    });
+        if (timeElapsed >= completionDelayMs) {
+            // Mark letter as complete FIRST
+            delete letterCompletionTimers[letterIndex];
+            wordProgress[letterIndex] = true;
+            
+            // Clear checkpoints for this letter
+            letterCheckpoints[letterIndex] = {};
+            
+            // Clear nose trails
+            clearTrail();
+            
+            // Play letter completion sound immediately
+            if (correctWordSound) {
+                try {
+                    correctWordSound.currentTime = 0;
+                    correctWordSound.play().catch(() => playFallbackLetterSound());
+                } catch (error) {
+                    playFallbackLetterSound();
                 }
-            } catch (error) {
-                // Fallback: play a simple beep sound
+            } else {
                 playFallbackLetterSound();
             }
-        } else {
-            // Fallback: play a simple beep sound
-            playFallbackLetterSound();
-        }
-        
-        // Clear nose trails for clean visual reset
-        clearTrail();
-        
-        // Add delay before advancing to next letter
-        setTimeout(() => {
-            // Advance to next letter
-            currentLetterIndex++;
             
-            // Check if all letters are completed
-            const lettersOnly = currentWord.split('').filter(char => char !== ' ');
-            if (currentLetterIndex >= lettersOnly.length) {
-                // All letters completed, show closing screen
-                setTimeout(() => {
-                    showClosingScreen();
-                }, 100);
-            }
-        }, 1000);
+            // Wait 800ms before advancing to next letter (gives time to see completed letter)
+            setTimeout(() => {
+                // Advance to next letter after delay
+                currentLetterIndex++;
+                
+                // Check if all letters are completed
+                const lettersOnly = currentWord.split('').filter(char => char !== ' ');
+                if (currentLetterIndex >= lettersOnly.length) {
+                    // All letters done - show closing screen
+                    setTimeout(() => {
+                        showClosingScreen();
+                    }, 100);
+                }
+            }, 1000); // 1000ms delay before switching to next letter
         }
     } else {
-        // Letter no longer meets completion criteria - reset timer
+        // Not enough checkpoints hit - reset timer
         if (letterCompletionTimers[letterIndex]) {
             delete letterCompletionTimers[letterIndex];
         }
     }
 }
+
 
 function checkWordCompletion() {
     // Check if all letters are completed (spaces are automatically completed)
@@ -1857,24 +2070,8 @@ function updateWordDisplay() {
                 text-stroke: 2px solid #0066ff;
             ">${currentWord[i]}</span>`;
         } else {
-            // Calculate partial progress for this letter
-            const paintedPoints = letterPaintedAreas[i] || [];
-            const progress = Math.min(paintedPoints.length / 15, 1); // Max at 15 points
-            
-            if (progress > 0) {
-                // Show partially filled letter with gradient effect
-                const opacity = 0.3 + (progress * 0.7); // 30% to 100% opacity
-                const blueIntensity = Math.floor(progress * 255);
-                displayHTML += `<span style="
-                    color: rgba(0, 102, 255, ${opacity}); 
-                    -webkit-text-stroke: ${3 - (progress * 2)}px #333; 
-                    text-shadow: 2px 2px 4px rgba(0,102,255,${progress * 0.5});
-                    transition: all 0.3s ease;
-                ">${currentWord[i]}</span>`;
-            } else {
-                // Show unfilled letter in gray outline style (visible but not filled)
-                displayHTML += `<span style="color: #666; -webkit-text-stroke: 2px #333; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">${currentWord[i]}</span>`;
-            }
+            // Show unfilled letter in gray outline style (visible but not filled)
+            displayHTML += `<span style="color: #666; -webkit-text-stroke: 2px #333; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">${currentWord[i]}</span>`;
             allFilled = false;
         }
     }
@@ -1895,7 +2092,7 @@ function randomizeWord() {
     currentWord = words[randomIndex].trim(); // Keep spaces between letters
     currentBrand = wordToBrand[currentWord]; // Get the brand for this word
     wordProgress = {};
-    letterPaintedAreas = {}; // Clear painted areas
+    letterCheckpoints = {}; // Reset checkpoints
     letterCompletionTimers = {}; // Reset completion timers
     currentLetterIndex = 0; // Start with first letter
     wordCompletedSoundPlayed = false; // Reset sound flag for new word
