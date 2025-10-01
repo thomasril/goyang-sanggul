@@ -14,6 +14,19 @@ let noseTrail = [];
 let maxTrailLength = 200; // Reduced from 500 to prevent memory issues
 let isVideoReady = false;
 let isModelReady = false;
+// Pose tracking variables to prevent switching between people
+let lastTrackedNoseX = null;
+let lastTrackedNoseY = null;
+let lastTrackedFaceCenterX = null; // Track center of face for better person identification
+let lastTrackedFaceCenterY = null;
+let maxNoseJumpDistance = 80; // VERY strict - maximum pixel distance to allow nose to jump (reduced from 100)
+let maxFaceCenterJumpDistance = 90; // VERY strict - maximum distance for face center to move (reduced from 120)
+let poseTrackingEnabled = true;
+let personLocked = false; // Flag to indicate we've locked onto a person
+let framesWithoutPerson = 0; // Count frames without detecting the locked person
+let maxFramesWithoutPerson = 45; // Unlock after 45 frames (~1.5 seconds at 30fps) without detecting person (increased tolerance)
+let consecutiveFramesWithPerson = 0; // Count frames to confirm person before locking
+let lockStrength = 0; // Gradually increase lock strength (0-100)
 // Mobile responsiveness variables
 let isMobile = false;
 let scaleFactor = 1;
@@ -392,6 +405,16 @@ function cleanupGameResources() {
     letterPaintedAreas = {};
     wordProgress = {};
     
+    // Reset pose tracking
+    lastTrackedNoseX = null;
+    lastTrackedNoseY = null;
+    lastTrackedFaceCenterX = null;
+    lastTrackedFaceCenterY = null;
+    personLocked = false;
+    framesWithoutPerson = 0;
+    consecutiveFramesWithPerson = 0;
+    lockStrength = 0;
+    
     // Reset all state variables
     isVideoReady = false;
     isModelReady = false;
@@ -424,6 +447,16 @@ function resetGame() {
     faceDetected = false;
     isRunning = false;
     wordCompletedSoundPlayed = false; // Reset sound flag
+    
+    // Reset pose tracking
+    lastTrackedNoseX = null;
+    lastTrackedNoseY = null;
+    lastTrackedFaceCenterX = null;
+    lastTrackedFaceCenterY = null;
+    personLocked = false;
+    framesWithoutPerson = 0;
+    consecutiveFramesWithPerson = 0;
+    lockStrength = 0;
     
     // Reset performance counters
     lastFrameTime = 0;
@@ -572,16 +605,17 @@ function videoReady() {
     }
     
     // Use the correct PoseNet API for ml5.js v0.12.2x
+    // Configured for single-person tracking to prevent switching between multiple people
     poseNet = ml5.poseNet(video, {
         architecture: 'MobileNetV1',
         imageScaleFactor: 0.3,
         outputStride: 16,
         flipHorizontal: false,
         minConfidence: 0.5,
-        maxPoseDetections: 1,
+        maxPoseDetections: 1, // Only detect one person at a time
         scoreThreshold: 0.5,
         nmsRadius: 20,
-        detectionType: 'single',
+        detectionType: 'single', // Single pose detection mode
         inputResolution: 513,
         multiplier: 0.75,
         quantBytes: 2
@@ -591,11 +625,128 @@ function videoReady() {
     poseNet.on('pose', gotPoses);
 }
 
+// Helper function to calculate face center from multiple keypoints
+function calculateFaceCenter(pose) {
+    if (!pose || !pose.pose) return null;
+    
+    // Use direct access to facial keypoints as per ml5.js documentation
+    const p = pose.pose;
+    const nose = p.nose;
+    const leftEye = p.leftEye;
+    const rightEye = p.rightEye;
+    const leftEar = p.leftEar;
+    const rightEar = p.rightEar;
+    
+    // Check if nose exists and has good confidence
+    if (!nose || !nose.confidence || nose.confidence < 0.3) return null;
+    
+    // Collect valid facial keypoints for face center calculation
+    let points = [];
+    if (nose && nose.confidence > 0.3) points.push({ x: nose.x, y: nose.y });
+    if (leftEye && leftEye.confidence > 0.3) points.push({ x: leftEye.x, y: leftEye.y });
+    if (rightEye && rightEye.confidence > 0.3) points.push({ x: rightEye.x, y: rightEye.y });
+    if (leftEar && leftEar.confidence > 0.2) points.push({ x: leftEar.x, y: leftEar.y });
+    if (rightEar && rightEar.confidence > 0.2) points.push({ x: rightEar.x, y: rightEar.y });
+    
+    // Need at least the nose
+    if (points.length === 0) return null;
+    
+    // Calculate average position (face center)
+    let sumX = 0, sumY = 0;
+    for (let point of points) {
+        sumX += point.x;
+        sumY += point.y;
+    }
+    
+    return {
+        x: sumX / points.length,
+        y: sumY / points.length,
+        noseX: nose.x,
+        noseY: nose.y,
+        noseScore: nose.confidence
+    };
+}
+
 function gotPoses(results) {
-    if (results.length > 0) {
-        poses = [results[0]]; // Keep only the first detected person
-    } else {
+    if (!poseTrackingEnabled || results.length === 0) {
+        poses = results;
+        return;
+    }
+    
+    // Since PoseNet is in single-person mode, we only get poses[0]
+    // Just check if this ONE person is the same person we're tracking
+    const currentPose = results[0];
+    const faceCenter = calculateFaceCenter(currentPose);
+    
+    // No valid face detected
+    if (!faceCenter || faceCenter.noseScore < 0.35) {
         poses = [];
+        return;
+    }
+    
+    // If we haven't locked onto a person yet, IMMEDIATELY lock onto this person
+    if (!personLocked || lastTrackedNoseX === null || lastTrackedNoseY === null) {
+        // IMMEDIATE LOCK onto the first person detected
+        personLocked = true;
+        lastTrackedNoseX = faceCenter.noseX;
+        lastTrackedNoseY = faceCenter.noseY;
+        lastTrackedFaceCenterX = faceCenter.x;
+        lastTrackedFaceCenterY = faceCenter.y;
+        lockStrength = 0; // Start with weak lock, will strengthen
+        poses = [currentPose];
+        framesWithoutPerson = 0;
+        return;
+    }
+    
+    // We have a locked person - check if poses[0] is the SAME person
+    // Gradually strengthen the lock over time (makes it harder to switch)
+    lockStrength = Math.min(100, lockStrength + 2); // Increase by 2 each frame, max 100
+    
+    // Apply lock strength to thresholds - stronger lock = tighter thresholds
+    const strengthMultiplier = 1.0 - (lockStrength / 200); // 1.0 to 0.5 over time
+    const currentNoseThreshold = maxNoseJumpDistance * Math.max(0.6, strengthMultiplier);
+    const currentFaceCenterThreshold = maxFaceCenterJumpDistance * Math.max(0.6, strengthMultiplier);
+    
+    // Calculate distance from last tracked nose position
+    let noseDistance = Math.sqrt(
+        Math.pow(faceCenter.noseX - lastTrackedNoseX, 2) + 
+        Math.pow(faceCenter.noseY - lastTrackedNoseY, 2)
+    );
+    
+    // Also check face center distance for additional validation
+    let faceCenterDistance = Math.sqrt(
+        Math.pow(faceCenter.x - lastTrackedFaceCenterX, 2) + 
+        Math.pow(faceCenter.y - lastTrackedFaceCenterY, 2)
+    );
+    
+    // VERY STRICT: Both nose AND face center must be within threshold
+    // If either is too far, this is a DIFFERENT person - REJECT
+    if (noseDistance < currentNoseThreshold && faceCenterDistance < currentFaceCenterThreshold) {
+        // Same person! Accept and update tracking
+        const smoothingFactor = 0.7; // Smooth the tracking
+        lastTrackedNoseX = lastTrackedNoseX * (1 - smoothingFactor) + faceCenter.noseX * smoothingFactor;
+        lastTrackedNoseY = lastTrackedNoseY * (1 - smoothingFactor) + faceCenter.noseY * smoothingFactor;
+        lastTrackedFaceCenterX = lastTrackedFaceCenterX * (1 - smoothingFactor) + faceCenter.x * smoothingFactor;
+        lastTrackedFaceCenterY = lastTrackedFaceCenterY * (1 - smoothingFactor) + faceCenter.y * smoothingFactor;
+        
+        poses = [currentPose];
+        framesWithoutPerson = 0; // Reset counter
+    } else {
+        // Different person detected! REJECT this pose
+        framesWithoutPerson++;
+        
+        // If locked person has been gone too long, unlock so we can lock onto a new person
+        if (framesWithoutPerson > maxFramesWithoutPerson) {
+            personLocked = false;
+            lastTrackedNoseX = null;
+            lastTrackedNoseY = null;
+            lastTrackedFaceCenterX = null;
+            lastTrackedFaceCenterY = null;
+            lockStrength = 0;
+            framesWithoutPerson = 0;
+        }
+        
+        poses = []; // Reject this pose - it's not the tracked person
     }
 }
 
@@ -1315,55 +1466,59 @@ function transformNoseCoordinates(videoX, videoY) {
 }
 
 function drawNose(pose) {
-    // Check if pose has keypoints and nose exists
-    if (pose.pose && pose.pose.keypoints) {
-        let nosePoint = pose.pose.keypoints.find(kp => kp.part === 'nose');
+    // Check if pose exists - use ml5.js direct access method
+    if (!pose || !pose.pose) {
+        faceDetected = false;
+        return;
+    }
+    
+    // Direct access to nose as per ml5.js documentation
+    let nose = pose.pose.nose;
+    
+    if (nose && nose.confidence > 0.2) {
+        let videoX = nose.x;
+        let videoY = nose.y;
         
-        if (nosePoint && nosePoint.score > 0.2) {
-            let videoX = nosePoint.position.x;
-            let videoY = nosePoint.position.y;
-            
-            // Transform coordinates from video space to canvas space
-            const transformed = transformNoseCoordinates(videoX, videoY);
-            let targetX = transformed.x;
-            let targetY = transformed.y;
-            
-            // Use enhanced smoothing function
-            const smoothedPos = smoothNosePosition(targetX, targetY);
-            noseX = smoothedPos.x;
-            noseY = smoothedPos.y;
-            
-            // Add to trail BEFORE drawing the nose dot
-            addToTrail(noseX, noseY);
-            
-            // Draw current nose position - responsive size
-            push();
-            
-            // Use integer positions to prevent sub-pixel rendering issues
-            const drawX = Math.round(noseX);
-            const drawY = Math.round(noseY);
-            
-            // Responsive nose dot size with better scaling - smaller and more subtle
-            const baseNoseSize = 30;
-            const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
-            
-            // Main nose dot - smaller and more subtle to avoid interfering with letters
-            fill(255, 50, 50, 180); // Semi-transparent red
-            noStroke();
-            ellipse(drawX, drawY, noseDotSize);
-            
-            // Add a subtle white center for better visibility
-            fill(255, 255, 255, 120);
-            ellipse(drawX, drawY, noseDotSize * 0.6);
-            
-            pop();
-            
-            faceDetected = true;
-            updateNoseIndicator();
-            
-        } else {
-            faceDetected = false;
-        }
+        // Note: Pose tracking is now handled in gotPoses() function using face center
+        // This ensures we track the same person across frames
+        
+        // Transform coordinates from video space to canvas space
+        const transformed = transformNoseCoordinates(videoX, videoY);
+        let targetX = transformed.x;
+        let targetY = transformed.y;
+        
+        // Use enhanced smoothing function
+        const smoothedPos = smoothNosePosition(targetX, targetY);
+        noseX = smoothedPos.x;
+        noseY = smoothedPos.y;
+        
+        // Add to trail BEFORE drawing the nose dot
+        addToTrail(noseX, noseY);
+        
+        // Draw current nose position - responsive size
+        push();
+        
+        // Use integer positions to prevent sub-pixel rendering issues
+        const drawX = Math.round(noseX);
+        const drawY = Math.round(noseY);
+        
+        // Responsive nose dot size with better scaling - smaller and more subtle
+        const baseNoseSize = 30;
+        const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
+        
+        // Main nose dot - smaller and more subtle to avoid interfering with letters
+        fill(255, 50, 50, 180); // Semi-transparent red
+        noStroke();
+        ellipse(drawX, drawY, noseDotSize);
+        
+        // Add a subtle white center for better visibility
+        fill(255, 255, 255, 120);
+        ellipse(drawX, drawY, noseDotSize * 0.6);
+        
+        pop();
+        
+        faceDetected = true;
+        updateNoseIndicator();
     } else {
         faceDetected = false;
     }
