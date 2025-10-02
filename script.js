@@ -24,8 +24,8 @@ let personLocked = false;
 let framesWithoutPerson = 0;
 let maxFramesWithoutPerson = 60; // ~2 seconds at 30fps - balanced between temporary exit and true exit
 let maxFramesOutsideCanvas = 20; // ~0.67 seconds - unlock faster if person leaves canvas boundaries
-let descriptorMatchThreshold = 0.6; // Euclidean distance threshold for same person (lower = stricter)
-let strictDescriptorThreshold = 0.50; // Very strict threshold when relocking to prevent person switching (lowered from 0.55)
+let descriptorMatchThreshold = 0.70; // Very lenient threshold for 2+ meter distance tracking
+let strictDescriptorThreshold = 0.58; // Slightly lenient for relocking at distance
 // Spatial tracking for canvas boundaries
 let lastKnownNosePosition = null; // Track last position to detect out-of-bounds
 let framesOutsideCanvas = 0; // Count frames where detected faces are outside canvas
@@ -875,18 +875,19 @@ function startFaceDetection() {
         clearInterval(detectionInterval);
     }
     
-    // Run detection every 100ms (10 FPS) with optimized settings
+    // Run detection every 120ms (~8 FPS) - balanced for 320px input processing
+    // Slightly slower than before but handles larger input size for distance detection
     detectionInterval = setInterval(async () => {
         if (!isVideoReady || !faceApiModelsLoaded || !video || !video.elt) {
             return;
         }
         
         try {
-            // Detect faces with optimized settings for speed
+            // Detect faces with settings optimized for long-distance detection (2+ meters)
             const detections = await faceapi
                 .detectAllFaces(video.elt, new faceapi.TinyFaceDetectorOptions({
-                    inputSize: 160,        // Reduced from 224 for faster detection (20-30% faster!)
-                    scoreThreshold: 0.4     // Slightly lower for better detection during fast movement
+                    inputSize: 320,        // Maximum size for best small face detection at 2+ meters
+                    scoreThreshold: 0.2     // Very low threshold for detecting very distant faces
                 }))
                 .withFaceLandmarks(true)
                 .withFaceDescriptors();
@@ -897,7 +898,7 @@ function startFaceDetection() {
         } catch (error) {
             console.error('Face detection error:', error);
         }
-    }, 100);
+    }, 120);
 }
 
 /**
@@ -1011,8 +1012,27 @@ function processFaceDetections(detections) {
         framesWithoutPerson = 0;
         framesOutsideCanvas = 0; // Reset since person is found
         
-        // Slowly update the tracked descriptor (adapts to angle/expression changes)
-        const descriptorSmoothing = 0.05;
+        // Calculate face size to determine distance (smaller face = farther away)
+        const faceBox = bestMatch.detection.box;
+        const faceSize = faceBox.width * faceBox.height;
+        
+        // Adaptive descriptor smoothing for different distances (optimized for 2+ meters)
+        // Smaller face = higher smoothing to adapt to variations at distance
+        let descriptorSmoothing;
+        if (faceSize < 8000) {
+            // Very far away (2+ meters) - very small face
+            descriptorSmoothing = 0.12;
+        } else if (faceSize < 15000) {
+            // Far away (1-2 meters) - small face
+            descriptorSmoothing = 0.08;
+        } else if (faceSize < 30000) {
+            // Normal distance (0.5-1 meter) - medium face
+            descriptorSmoothing = 0.05;
+        } else {
+            // Close up (< 0.5 meter) - large face
+            descriptorSmoothing = 0.03;
+        }
+        
         for (let i = 0; i < trackedPersonDescriptor.length; i++) {
             trackedPersonDescriptor[i] = 
                 trackedPersonDescriptor[i] * (1 - descriptorSmoothing) + 
@@ -1023,25 +1043,14 @@ function processFaceDetections(detections) {
         updateNosePosition(bestMatch);
         lastKnownNosePosition = { x: noseX, y: noseY };
         
-        // Log when reacquiring after being missing
-        if (wasRecentlyMissing) {
-            console.log(`✅ Reacquired tracked person (distance: ${bestDistance.toFixed(3)})`);
-        }
-        
     } else {
         // DIFFERENT PERSON or no good match
         faceDetected = false;
         framesWithoutPerson++;
         
-        // Log when rejecting during missing period
-        if (bestMatch && wasRecentlyMissing) {
-            console.log(`❌ Rejected face while person missing (distance: ${bestDistance.toFixed(3)}, threshold: ${currentThreshold.toFixed(3)})`);
-        }
-        
-        // Unlock if wrong person for too long (3 seconds)
+        // Unlock if wrong person for too long
         if (framesWithoutPerson > maxFramesWithoutPerson) {
             unlockPerson();
-            console.log('⚠️ Person lost for too long - unlocking...');
         }
     }
 }
@@ -1060,9 +1069,6 @@ function updateNosePosition(detection) {
 
 // Unlock person and reset tracking
 function unlockPerson() {
-    if (personLocked) {
-        console.log('🔓 Unlocking person - ready to track new person');
-    }
     personLocked = false;
     trackedPersonDescriptor = null;
     framesWithoutPerson = 0;
@@ -1073,15 +1079,10 @@ function unlockPerson() {
 
 function modelReady() {
     isModelReady = true;
-    isRunning = true; // Start the game when model is ready
-    // PoseNet model ready - Game started
+    isRunning = true;
 }
 
-// Global variables to store images
-// (Images are now stored in the images object)
-// Custom fonts
-// (Fonts are now stored in the fonts object)
-let timerFgColor = null; // Store the extracted color from Timer_FG
+let timerFgColor = null;
 
 // Brand product images
 let brandImages = {};
