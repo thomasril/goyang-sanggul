@@ -66,8 +66,8 @@ let checkpointDefinitions = {
     // Simplified to 2 checkpoints per letter: START and END points based on natural drawing patterns
     // Format: { x: horizontal position (0=left, 1=right), y: vertical position (0=top, 1=bottom) }
     'A': [
-        { x: 0.5, y: 0.0, label: 'start' },      // Start: top point
-        { x: 0.5, y: 0.6, label: 'end' }         // End: crossbar (ensures shape is drawn)
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top point (apex of A)
+        { x: 0.2, y: 0.6, label: 'end' }         // End: left side of crossbar (ensures A shape drawn)
     ],
     'B': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left (beginning of vertical line)
@@ -138,24 +138,24 @@ let checkpointDefinitions = {
         { x: 0.9, y: 1.0, label: 'end' }         // End: bottom-right leg
     ],
     'S': [
-        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right
-        { x: 0.8, y: 0.8, label: 'end' }         // End: bottom-right
+        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right (S curves from here)
+        { x: 0.2, y: 0.8, label: 'end' }         // End: bottom-left (S curves to here)
     ],
     'T': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left of horizontal bar
         { x: 0.5, y: 1.0, label: 'end' }         // End: bottom of vertical stem
     ],
     'U': [
-        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
-        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left (start of left line)
+        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom center (ensures U curve drawn)
     ],
     'V': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
-        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
+        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom center point (V shape)
     ],
     'W': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
-        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
+        { x: 0.5, y: 0.7, label: 'end' }         // End: middle dip (ensures W pattern drawn)
     ],
     'X': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
@@ -793,8 +793,8 @@ async function videoReady() {
     // Small delay to ensure first detection runs
     setTimeout(() => {
         // Hide loading screen
-        if (loadingScreenElement) {
-            loadingScreenElement.style.display = 'none';
+    if (loadingScreenElement) {
+        loadingScreenElement.style.display = 'none';
         }
         modelReady();
     }, 300); // Reduced from 500ms since models are already loaded
@@ -884,7 +884,7 @@ function processFaceDetections(detections) {
         if (framesOutsideCanvas > maxFramesOutsideCanvas && personLocked) {
             console.log('⚡ Fast unlock: All detected faces outside canvas boundaries');
             unlockPerson();
-            return;
+        return;
         }
     } else {
         framesOutsideCanvas = 0; // Reset if face found within bounds
@@ -959,7 +959,7 @@ function processFaceDetections(detections) {
         } else if (faceSize < 30000) {
             // Normal distance (0.5-1 meter) - medium face
             descriptorSmoothing = 0.05;
-        } else {
+    } else {
             // Close up (< 0.5 meter) - large face
             descriptorSmoothing = 0.03;
         }
@@ -1633,19 +1633,44 @@ function drawCheckpoints(letter, letterIndex, letterCenterX, letterCenterY, font
     const letterLeft = letterCenterX - letterWidth / 2;
     const letterTop = letterCenterY - letterHeight / 2 + fontSize * 0.05; // Slight downward adjustment
     
-    // Match the collision detection radius for visual consistency
-    const checkpointRadius = Math.max(50, fontSize * 0.25);
+    const hitCheckpoints = letterCheckpoints[letterIndex] || {};
+    // Make checkpoint radius larger and more responsive to screen size
+    const checkpointRadius = Math.max(60, fontSize * 0.3); // Increased from 50px and 0.25
     
     checkpoints.forEach((checkpoint, idx) => {
         const checkpointX = letterLeft + (checkpoint.x * letterWidth);
         const checkpointY = letterTop + (checkpoint.y * letterHeight);
-
-        // Draw checkpoint indicator
-        push();
-        noFill();
-        noStroke();
         
+        const isHit = hitCheckpoints[checkpoint.label];
+        
+        // Draw checkpoint with clear visual feedback
+        push();
+        
+        if (isHit) {
+            // Hit checkpoint - show bright green with pulsing effect
+            fill(0, 255, 100, 220);
+        noStroke();
+            ellipse(checkpointX, checkpointY, checkpointRadius * 1.3);
+            
+            // Inner white dot
+            fill(255, 255, 255);
+            console.log("masuk")
+            ellipse(checkpointX, checkpointY, checkpointRadius * 0.4);
+        } else {
+            // Unhit checkpoint - show semi-transparent pink circle with white border
+            fill(254, 48, 86, 120);
+            stroke(255, 255, 255, 200);
+            strokeWeight(3);
+            console.log("ga masuk bang")
         ellipse(checkpointX, checkpointY, checkpointRadius);
+            
+            // Add checkpoint number for clarity
+            fill(255, 255, 255);
+            noStroke();
+            textAlign(CENTER, CENTER);
+            textSize(checkpointRadius * 0.4);
+            text(idx + 1, checkpointX, checkpointY);
+        }
         
         pop();
     });
@@ -1756,42 +1781,42 @@ function drawNose() {
         return;
     }
     
-    // Transform coordinates from video space to canvas space
+        // Transform coordinates from video space to canvas space
     const transformed = transformNoseCoordinates(noseX, noseY);
-    let targetX = transformed.x;
-    let targetY = transformed.y;
-    
-    // Use enhanced smoothing function
-    const smoothedPos = smoothNosePosition(targetX, targetY);
+        let targetX = transformed.x;
+        let targetY = transformed.y;
+        
+        // Use enhanced smoothing function
+        const smoothedPos = smoothNosePosition(targetX, targetY);
     const smoothedX = smoothedPos.x;
     const smoothedY = smoothedPos.y;
-    
-    // Add to trail BEFORE drawing the nose dot
+        
+        // Add to trail BEFORE drawing the nose dot
     addToTrail(smoothedX, smoothedY);
-    
-    // Draw current nose position - responsive size
-    push();
-    
-    // Use integer positions to prevent sub-pixel rendering issues
+        
+        // Draw current nose position - responsive size
+        push();
+        
+        // Use integer positions to prevent sub-pixel rendering issues
     const drawX = Math.round(smoothedX);
     const drawY = Math.round(smoothedY);
-    
-    // Responsive nose dot size with better scaling - smaller and more subtle
-    const baseNoseSize = 30;
-    const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
-    
-    // Main nose dot - smaller and more subtle to avoid interfering with letters
-    fill(255, 50, 50, 180); // Semi-transparent red
-    noStroke();
-    ellipse(drawX, drawY, noseDotSize);
-    
-    // Add a subtle white center for better visibility
-    fill(255, 255, 255, 120);
-    ellipse(drawX, drawY, noseDotSize * 0.6);
-    
-    pop();
-    
-    updateNoseIndicator();
+        
+        // Responsive nose dot size with better scaling - smaller and more subtle
+        const baseNoseSize = 30;
+        const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
+        
+        // Main nose dot - smaller and more subtle to avoid interfering with letters
+        fill(255, 50, 50, 180); // Semi-transparent red
+        noStroke();
+        ellipse(drawX, drawY, noseDotSize);
+        
+        // Add a subtle white center for better visibility
+        fill(255, 255, 255, 120);
+        ellipse(drawX, drawY, noseDotSize * 0.6);
+        
+        pop();
+        
+        updateNoseIndicator();
 }
 
 function addToTrail(x, y) {
@@ -1944,8 +1969,8 @@ function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterC
         const checkpointY = letterTop + (checkpoint.y * letterHeight);
         
         // Check if nose is within checkpoint radius (responsive size)
-        // Increased from 15% to 25% for easier hitting
-        const checkpointRadius = Math.max(50, fontSize * 0.25); // 25% of font size for easier touch
+        // Larger radius for better hit detection across different screen sizes
+        const checkpointRadius = Math.max(60, fontSize * 0.3); // MUST match drawCheckpoints()
         const distance = Math.sqrt(
             Math.pow(screenX - checkpointX, 2) + 
             Math.pow(screenY - checkpointY, 2)
@@ -1954,6 +1979,9 @@ function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterC
         if (distance < checkpointRadius) {
             // Mark checkpoint as hit
             letterCheckpoints[letterIndex][checkpoint.label] = true;
+            
+            // Debug log for testing on different screen sizes
+            console.log(`✓ Checkpoint ${checkpoint.label} HIT for letter ${letter} (distance: ${Math.round(distance)}px, radius: ${Math.round(checkpointRadius)}px)`);
         }
     });
 }
@@ -1979,10 +2007,17 @@ function checkLetterCompletionByCheckpoints(letterIndex, letter) {
     // Calculate completion percentage
     const completionPercentage = hitCount / checkpoints.length;
     
+    // Debug log for testing on different screen sizes
+    if (hitCount > 0) {
+        console.log(`Letter ${letter} progress: ${hitCount}/${checkpoints.length} checkpoints (${Math.round(completionPercentage * 100)}%)`);
+    }
+    
     // Require both checkpoints to be hit (100% - ensures the letter shape is properly drawn)
     const requiredPercentage = 1.0;
     
     if (completionPercentage >= requiredPercentage) {
+        console.log(`✓ Letter ${letter} ready to complete! Waiting ${completionDelayMs}ms...`);
+        
         // Start completion timer if not already started
         if (!letterCompletionTimers[letterIndex]) {
             letterCompletionTimers[letterIndex] = Date.now();
@@ -1995,6 +2030,8 @@ function checkLetterCompletionByCheckpoints(letterIndex, letter) {
             // Mark letter as complete FIRST
             delete letterCompletionTimers[letterIndex];
             wordProgress[letterIndex] = true;
+            
+            console.log(`🎉 Letter ${letter} COMPLETED!`);
             
             // Clear checkpoints for this letter
             letterCheckpoints[letterIndex] = {};
