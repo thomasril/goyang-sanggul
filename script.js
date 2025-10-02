@@ -66,8 +66,8 @@ let checkpointDefinitions = {
     // Simplified to 2 checkpoints per letter: START and END points based on natural drawing patterns
     // Format: { x: horizontal position (0=left, 1=right), y: vertical position (0=top, 1=bottom) }
     'A': [
-        { x: 0.5, y: 0.0, label: 'start' },      // Start: top point (apex of A)
-        { x: 0.2, y: 0.6, label: 'end' }         // End: left side of crossbar (ensures A shape drawn)
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top point
+        { x: 0.5, y: 0.6, label: 'end' }         // End: crossbar (ensures shape is drawn)
     ],
     'B': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left (beginning of vertical line)
@@ -138,24 +138,24 @@ let checkpointDefinitions = {
         { x: 0.9, y: 1.0, label: 'end' }         // End: bottom-right leg
     ],
     'S': [
-        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right (S curves from here)
-        { x: 0.2, y: 0.8, label: 'end' }         // End: bottom-left (S curves to here)
+        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right
+        { x: 0.8, y: 0.8, label: 'end' }         // End: bottom-right
     ],
     'T': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left of horizontal bar
         { x: 0.5, y: 1.0, label: 'end' }         // End: bottom of vertical stem
     ],
     'U': [
-        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left (start of left line)
-        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom center (ensures U curve drawn)
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'V': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
-        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom center point (V shape)
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'W': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
-        { x: 0.5, y: 0.7, label: 'end' }         // End: middle dip (ensures W pattern drawn)
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'X': [
         { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
@@ -372,6 +372,8 @@ async function startGame() {
 
 async function requestCameraAccess() {
     return new Promise((resolve, reject) => {
+        console.log('🎥 Requesting camera: 1080x1920 (portrait)...');
+        
         navigator.mediaDevices.getUserMedia({ 
             video: {
                 width: { ideal: 1080 },  // try to get tall shape
@@ -380,11 +382,26 @@ async function requestCameraAccess() {
             }
         })
         .then(stream => {
+            // Check what resolution we actually got
+            const videoTrack = stream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            console.log('✅ Camera granted!');
+            console.log('   Requested: 1080x1920 (portrait)');
+            console.log('   Actual:   ', settings.width, 'x', settings.height);
+            console.log('   Ratio:    ', (settings.width / settings.height).toFixed(2));
+            
+            // Warn if not portrait
+            if (settings.width > settings.height) {
+                console.warn('⚠️  Camera is LANDSCAPE, but canvas is PORTRAIT!');
+                console.warn('    This will cause coordinate mismatch!');
+            }
+            
             // Store the stream for later use
             window.cameraStream = stream;
             resolve(stream);
         })
         .catch(error => {
+            console.error('❌ Camera request failed:', error);
             reject(error);
         });
     });
@@ -665,6 +682,8 @@ function initializeGame() {
     // Calculate proper canvas size with 9:16 aspect ratio (1080x1920 target)
     const dimensions = calculateCanvasDimensions();
     
+    console.log('🖼️  Canvas size:', dimensions.width, 'x', dimensions.height);
+    
     // Create p5.js canvas with proper 9:16 aspect ratio
     const canvas = createCanvas(dimensions.width, dimensions.height);
     
@@ -793,8 +812,8 @@ async function videoReady() {
     // Small delay to ensure first detection runs
     setTimeout(() => {
         // Hide loading screen
-    if (loadingScreenElement) {
-        loadingScreenElement.style.display = 'none';
+        if (loadingScreenElement) {
+            loadingScreenElement.style.display = 'none';
         }
         modelReady();
     }, 300); // Reduced from 500ms since models are already loaded
@@ -884,7 +903,7 @@ function processFaceDetections(detections) {
         if (framesOutsideCanvas > maxFramesOutsideCanvas && personLocked) {
             console.log('⚡ Fast unlock: All detected faces outside canvas boundaries');
             unlockPerson();
-        return;
+            return;
         }
     } else {
         framesOutsideCanvas = 0; // Reset if face found within bounds
@@ -959,7 +978,7 @@ function processFaceDetections(detections) {
         } else if (faceSize < 30000) {
             // Normal distance (0.5-1 meter) - medium face
             descriptorSmoothing = 0.05;
-    } else {
+        } else {
             // Close up (< 0.5 meter) - large face
             descriptorSmoothing = 0.03;
         }
@@ -996,6 +1015,12 @@ function updateNosePosition(detection) {
     // Update nose position in video coordinates
     noseX = noseTip.x;
     noseY = noseTip.y;
+    
+    // Debug: Log coordinates once per second
+    if (!window.lastCoordLog || Date.now() - window.lastCoordLog > 1000) {
+        console.log('👃 Nose in video space:', Math.round(noseX), 'x', Math.round(noseY));
+        window.lastCoordLog = Date.now();
+    }
 }
 
 // Unlock person and reset tracking
@@ -1338,7 +1363,7 @@ function draw() {
         }
         lastFrameTime = currentTime;
 
-        // Now apply flip transformation ONLY for video and nose detection
+        // Draw video
         push();
         translate(width, 0);
         scale(-1, 1);
@@ -1634,44 +1659,20 @@ function drawCheckpoints(letter, letterIndex, letterCenterX, letterCenterY, font
     const letterTop = letterCenterY - letterHeight / 2 + fontSize * 0.05; // Slight downward adjustment
     
     const hitCheckpoints = letterCheckpoints[letterIndex] || {};
-    // Make checkpoint radius larger and more responsive to screen size
-    const checkpointRadius = Math.max(60, fontSize * 0.3); // Increased from 50px and 0.25
+    // FLEXIBLE checkpoint radius - adapts to canvas size (MUST match checkCheckpointCollision!)
+    const baseRadius = Math.min(width, height) * 0.06; // 6% of smallest dimension
+    const checkpointRadius = Math.max(baseRadius, fontSize * 0.3);
     
     checkpoints.forEach((checkpoint, idx) => {
         const checkpointX = letterLeft + (checkpoint.x * letterWidth);
         const checkpointY = letterTop + (checkpoint.y * letterHeight);
         
-        const isHit = hitCheckpoints[checkpoint.label];
-        
+
         // Draw checkpoint with clear visual feedback
         push();
-        
-        if (isHit) {
-            // Hit checkpoint - show bright green with pulsing effect
-            fill(0, 255, 100, 220);
+        noFill();
         noStroke();
-            ellipse(checkpointX, checkpointY, checkpointRadius * 1.3);
-            
-            // Inner white dot
-            fill(255, 255, 255);
-            console.log("masuk")
-            ellipse(checkpointX, checkpointY, checkpointRadius * 0.4);
-        } else {
-            // Unhit checkpoint - show semi-transparent pink circle with white border
-            fill(254, 48, 86, 120);
-            stroke(255, 255, 255, 200);
-            strokeWeight(3);
-            console.log("ga masuk bang")
         ellipse(checkpointX, checkpointY, checkpointRadius);
-            
-            // Add checkpoint number for clarity
-            fill(255, 255, 255);
-            noStroke();
-            textAlign(CENTER, CENTER);
-            textSize(checkpointRadius * 0.4);
-            text(idx + 1, checkpointX, checkpointY);
-        }
-        
         pop();
     });
 }
@@ -1781,42 +1782,42 @@ function drawNose() {
         return;
     }
     
-        // Transform coordinates from video space to canvas space
+    // Transform coordinates from video space to canvas space
     const transformed = transformNoseCoordinates(noseX, noseY);
-        let targetX = transformed.x;
-        let targetY = transformed.y;
-        
-        // Use enhanced smoothing function
-        const smoothedPos = smoothNosePosition(targetX, targetY);
+    let targetX = transformed.x;
+    let targetY = transformed.y;
+    
+    // Use enhanced smoothing function
+    const smoothedPos = smoothNosePosition(targetX, targetY);
     const smoothedX = smoothedPos.x;
     const smoothedY = smoothedPos.y;
-        
-        // Add to trail BEFORE drawing the nose dot
+    
+    // Add to trail BEFORE drawing the nose dot
     addToTrail(smoothedX, smoothedY);
-        
-        // Draw current nose position - responsive size
-        push();
-        
-        // Use integer positions to prevent sub-pixel rendering issues
+    
+    // Draw current nose position - responsive size
+    push();
+    
+    // Use integer positions to prevent sub-pixel rendering issues
     const drawX = Math.round(smoothedX);
     const drawY = Math.round(smoothedY);
-        
-        // Responsive nose dot size with better scaling - smaller and more subtle
-        const baseNoseSize = 30;
-        const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
-        
-        // Main nose dot - smaller and more subtle to avoid interfering with letters
-        fill(255, 50, 50, 180); // Semi-transparent red
-        noStroke();
-        ellipse(drawX, drawY, noseDotSize);
-        
-        // Add a subtle white center for better visibility
-        fill(255, 255, 255, 120);
-        ellipse(drawX, drawY, noseDotSize * 0.6);
-        
-        pop();
-        
-        updateNoseIndicator();
+    
+    // Responsive nose dot size with better scaling - smaller and more subtle
+    const baseNoseSize = 30;
+    const noseDotSize = Math.max(15, baseNoseSize * scaleFactor);
+    
+    // Main nose dot - smaller and more subtle to avoid interfering with letters
+    fill(255, 50, 50, 180); // Semi-transparent red
+    noStroke();
+    ellipse(drawX, drawY, noseDotSize);
+    
+    // Add a subtle white center for better visibility
+    fill(255, 255, 255, 120);
+    ellipse(drawX, drawY, noseDotSize * 0.6);
+    
+    pop();
+    
+    updateNoseIndicator();
 }
 
 function addToTrail(x, y) {
@@ -1925,12 +1926,24 @@ function checkTextFilling() {
     const wordY = height * 0.6; // Match the new letter position
     const fontSize = Math.min(width * 0.3, height * 0.3); // MUST match the drawing font size!
     
-    // Convert nose position to screen coordinates (accounting for mirroring)
-    const screenX = width - noseX; // Flip X coordinate
-    const screenY = noseY;
+    // FLEXIBLE COORDINATE HANDLING: Transform video coordinates to canvas coordinates
+    // This works whether camera is portrait (1080x1920) or landscape (1920x1080)
+    const transformed = transformNoseCoordinates(noseX, noseY);
+    
+    // Use transformed coordinates directly (NO mirroring)
+    const screenX = width - transformed.x;
+    const screenY = transformed.y;
+    
+    // Debug: Log collision coordinates once per second
+    if (!window.lastCollisionLog || Date.now() - window.lastCollisionLog > 1000) {
+        console.log('🎯 Collision - Video:', Math.round(noseX), 'x', Math.round(noseY),
+                    '→ Transformed:', Math.round(transformed.x), 'x', Math.round(transformed.y),
+                    '→ Screen:', Math.round(screenX), 'x', Math.round(screenY));
+        window.lastCollisionLog = Date.now();
+    }
         
-        // Get the actual character index for the current letter
-        const actualIndex = getActualLetterIndex(currentLetterIndex);
+    // Get the actual character index for the current letter
+    const actualIndex = getActualLetterIndex(currentLetterIndex);
         
     if (actualIndex >= 0 && actualIndex < currentWord.length && !wordProgress[actualIndex]) {
         // Check checkpoint-based collision for this letter
@@ -1968,9 +1981,11 @@ function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterC
         const checkpointX = letterLeft + (checkpoint.x * letterWidth);
         const checkpointY = letterTop + (checkpoint.y * letterHeight);
         
-        // Check if nose is within checkpoint radius (responsive size)
-        // Larger radius for better hit detection across different screen sizes
-        const checkpointRadius = Math.max(60, fontSize * 0.3); // MUST match drawCheckpoints()
+        // FLEXIBLE checkpoint radius - adapts to canvas size for better hit detection
+        // Larger radius for better hit detection across different screen sizes and camera orientations
+        const baseRadius = Math.min(width, height) * 0.03; // 6% of smallest dimension
+        const checkpointRadius = Math.max(baseRadius, fontSize * 0.15); // MUST match drawCheckpoints()
+        
         const distance = Math.sqrt(
             Math.pow(screenX - checkpointX, 2) + 
             Math.pow(screenY - checkpointY, 2)
@@ -1981,7 +1996,7 @@ function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterC
             letterCheckpoints[letterIndex][checkpoint.label] = true;
             
             // Debug log for testing on different screen sizes
-            console.log(`✓ Checkpoint ${checkpoint.label} HIT for letter ${letter} (distance: ${Math.round(distance)}px, radius: ${Math.round(checkpointRadius)}px)`);
+            console.log(`✓ Checkpoint ${checkpoint.label} HIT for letter ${letter} (distance: ${Math.round(distance)}px / radius: ${Math.round(checkpointRadius)}px)`);
         }
     });
 }
