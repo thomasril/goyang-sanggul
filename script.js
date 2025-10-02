@@ -63,180 +63,111 @@ let completionDelayMs = 400; // 0.4 second delay before marking letter as comple
 // Checkpoint-based letter completion system
 let letterCheckpoints = {}; // Track which checkpoints have been hit for each letter
 let checkpointDefinitions = {
-    // Each letter has checkpoints defined as relative positions (0-1 scale)
+    // Simplified to 2 checkpoints per letter: START and END points based on natural drawing patterns
     // Format: { x: horizontal position (0=left, 1=right), y: vertical position (0=top, 1=bottom) }
     'A': [
-        { x: 0.5, y: 0.0, label: 'top' },        // Top point
-        { x: 0.0, y: 1.0, label: 'bottomLeft' }, // Bottom left
-        { x: 1.0, y: 1.0, label: 'bottomRight' }, // Bottom right
-        { x: 0.5, y: 0.6, label: 'crossBar' }    // Cross bar center
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top point
+        { x: 0.5, y: 0.6, label: 'end' }         // End: crossbar (ensures shape is drawn)
     ],
     'B': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.0, y: 0.5, label: 'middleLeft' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.8, y: 0.25, label: 'topBump' },
-        { x: 0.8, y: 0.75, label: 'bottomBump' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left (beginning of vertical line)
+        { x: 0.8, y: 0.75, label: 'end' }        // End: bottom bump (ensures vertical line + bump drawn)
     ],
     'C': [
-        { x: 1.0, y: 0.2, label: 'topRight' },
-        { x: 0.2, y: 0.0, label: 'top' },
-        { x: 0.0, y: 0.5, label: 'left' },
-        { x: 0.2, y: 1.0, label: 'bottom' },
-        { x: 1.0, y: 0.8, label: 'bottomRight' }
+        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right opening
+        { x: 0.8, y: 0.8, label: 'end' }         // End: bottom-right opening (ensures C shape)
     ],
     'D': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.0, y: 0.5, label: 'middleLeft' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.7, y: 0.25, label: 'topCurve' },
-        { x: 0.7, y: 0.75, label: 'bottomCurve' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.7, y: 0.75, label: 'end' }        // End: bottom curve
     ],
     'E': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.8, y: 0.0, label: 'topRight' },
-        { x: 0.0, y: 0.5, label: 'middle' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.8, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.8, y: 1.0, label: 'end' }         // End: bottom-right
     ],
     'F': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 0.0, y: 0.5, label: 'middle' },
-        { x: 0.7, y: 0.5, label: 'middleRight' },
-        { x: 0.0, y: 1.0, label: 'bottom' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.7, y: 0.5, label: 'end' }         // End: middle-right bar
     ],
     'G': [
-        { x: 0.8, y: 0.2, label: 'topRight' },
-        { x: 0.2, y: 0.0, label: 'top' },
-        { x: 0.0, y: 0.5, label: 'left' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 0.8, y: 0.7, label: 'bottomRight' }
+        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right
+        { x: 0.8, y: 0.7, label: 'end' }         // End: bottom-right with bar
     ],
     'H': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right
     ],
     'I': [
-        { x: 0.5, y: 0.0, label: 'top' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 0.5, y: 1.0, label: 'bottom' }
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top
+        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom
     ],
     'J': [
-        { x: 0.8, y: 0.0, label: 'top' },
-        { x: 0.8, y: 0.7, label: 'middleRight' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 0.2, y: 0.8, label: 'bottomLeft' }
+        { x: 0.8, y: 0.0, label: 'start' },      // Start: top
+        { x: 0.2, y: 0.9, label: 'end' }         // End: bottom curve left
     ],
     'K': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.0, y: 0.5, label: 'middle' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right diagonal
     ],
     'L': [
-        { x: 0.0, y: 0.0, label: 'top' },        // Top of vertical line
-        { x: 0.0, y: 1.0, label: 'bottomLeft' }, // Bottom left corner
-        { x: 1.0, y: 1.0, label: 'bottomRight' } // Bottom right end
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top of vertical line
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right corner
     ],
     'M': [
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 1.0, label: 'start' },      // Start: bottom-left
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right
     ],
     'N': [
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' },
-        { x: 1.0, y: 0.0, label: 'topRight' }
+        { x: 0.0, y: 1.0, label: 'start' },      // Start: bottom-left
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'O': [
-        { x: 0.5, y: 0.0, label: 'top' },
-        { x: 0.0, y: 0.5, label: 'left' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 1.0, y: 0.5, label: 'right' }
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top
+        { x: 1.0, y: 0.5, label: 'end' }         // End: right side (ensures oval drawn)
     ],
     'P': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.7, y: 0.2, label: 'topRight' },
-        { x: 0.0, y: 0.5, label: 'middle' },
-        { x: 0.7, y: 0.5, label: 'middleRight' },
-        { x: 0.0, y: 1.0, label: 'bottom' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.7, y: 0.5, label: 'end' }         // End: middle-right bump
     ],
     'Q': [
-        { x: 0.5, y: 0.0, label: 'top' },
-        { x: 0.0, y: 0.5, label: 'left' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 1.0, y: 0.5, label: 'right' },
-        { x: 1.0, y: 1.0, label: 'tail' }
+        { x: 0.5, y: 0.0, label: 'start' },      // Start: top
+        { x: 1.0, y: 1.0, label: 'end' }         // End: tail (bottom-right)
     ],
     'R': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.7, y: 0.2, label: 'topRight' },
-        { x: 0.0, y: 0.5, label: 'middle' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 0.9, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.9, y: 1.0, label: 'end' }         // End: bottom-right leg
     ],
     'S': [
-        { x: 0.8, y: 0.2, label: 'topRight' },
-        { x: 0.2, y: 0.2, label: 'topLeft' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 0.2, y: 0.8, label: 'bottomLeft' },
-        { x: 0.8, y: 0.8, label: 'bottomRight' }
+        { x: 0.8, y: 0.2, label: 'start' },      // Start: top-right
+        { x: 0.8, y: 0.8, label: 'end' }         // End: bottom-right
     ],
     'T': [
-        { x: 0.2, y: 0.0, label: 'topLeft' },    // Left part of horizontal bar
-        { x: 0.8, y: 0.0, label: 'topRight' },   // Right part of horizontal bar
-        { x: 0.5, y: 0.5, label: 'middle' },     // Middle of vertical stem
-        { x: 0.5, y: 1.0, label: 'bottom' }      // Bottom of vertical stem
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left of horizontal bar
+        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom of vertical stem
     ],
     'U': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.0, y: 0.8, label: 'bottomLeft' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 1.0, y: 0.8, label: 'bottomRight' },
-        { x: 1.0, y: 0.0, label: 'topRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'V': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.3, y: 0.5, label: 'middleLeft' },
-        { x: 0.5, y: 1.0, label: 'bottom' },
-        { x: 0.7, y: 0.5, label: 'middleRight' },
-        { x: 1.0, y: 0.0, label: 'topRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'W': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.25, y: 1.0, label: 'bottomLeft' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 0.75, y: 1.0, label: 'bottomRight' },
-        { x: 1.0, y: 0.0, label: 'topRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 0.0, label: 'end' }         // End: top-right
     ],
     'X': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.5, y: 0.5, label: 'center' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right
     ],
     'Y': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 0.5, y: 0.5, label: 'center' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 0.5, y: 1.0, label: 'bottom' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 0.5, y: 1.0, label: 'end' }         // End: bottom center stem
     ],
     'Z': [
-        { x: 0.0, y: 0.0, label: 'topLeft' },
-        { x: 1.0, y: 0.0, label: 'topRight' },
-        { x: 0.5, y: 0.5, label: 'middle' },
-        { x: 0.0, y: 1.0, label: 'bottomLeft' },
-        { x: 1.0, y: 1.0, label: 'bottomRight' }
+        { x: 0.0, y: 0.0, label: 'start' },      // Start: top-left
+        { x: 1.0, y: 1.0, label: 'end' }         // End: bottom-right
     ]
 };
 // Performance optimization variables
@@ -1696,24 +1627,21 @@ function drawCheckpoints(letter, letterIndex, letterCenterX, letterCenterY, font
     const checkpoints = checkpointDefinitions[letter.toUpperCase()];
     if (!checkpoints) return;
     
-    const letterWidth = fontSize * 0.8;
-    const letterHeight = fontSize;
+    // Use same conservative bounds as collision detection to keep checkpoints inside letter
+    const letterWidth = fontSize * 0.5;   // Actual letter width is smaller (50% of font size)
+    const letterHeight = fontSize * 0.6;  // Actual letter height is smaller (60% of font size)
     const letterLeft = letterCenterX - letterWidth / 2;
-    const letterTop = letterCenterY - letterHeight / 2;
+    const letterTop = letterCenterY - letterHeight / 2 + fontSize * 0.05; // Slight downward adjustment
     
-    const hitCheckpoints = letterCheckpoints[letterIndex] || {};
     // Match the collision detection radius for visual consistency
     const checkpointRadius = Math.max(50, fontSize * 0.25);
     
     checkpoints.forEach((checkpoint, idx) => {
         const checkpointX = letterLeft + (checkpoint.x * letterWidth);
         const checkpointY = letterTop + (checkpoint.y * letterHeight);
-        
-        const isHit = hitCheckpoints[checkpoint.label];
-        
+
         // Draw checkpoint indicator
         push();
-        
         noFill();
         noStroke();
         
@@ -1999,11 +1927,12 @@ function checkCheckpointCollision(letter, letterIndex, screenX, screenY, letterC
         letterCheckpoints[letterIndex] = {};
     }
     
-    // Define letter bounding box
-    const letterWidth = fontSize * 0.8;  // Letter width (slightly less than font size)
-    const letterHeight = fontSize;        // Letter height
+    // Define letter bounding box - more conservative to keep checkpoints inside visible letter
+    // Reduced size and adjusted positioning to match actual drawn letter dimensions
+    const letterWidth = fontSize * 0.5;   // Actual letter width is smaller (50% of font size)
+    const letterHeight = fontSize * 0.6;  // Actual letter height is smaller (60% of font size)
     const letterLeft = letterCenterX - letterWidth / 2;
-    const letterTop = letterCenterY - letterHeight / 2;
+    const letterTop = letterCenterY - letterHeight / 2 + fontSize * 0.05; // Slight downward adjustment
     
     // Check each checkpoint
     checkpoints.forEach((checkpoint, idx) => {
@@ -2050,8 +1979,8 @@ function checkLetterCompletionByCheckpoints(letterIndex, letter) {
     // Calculate completion percentage
     const completionPercentage = hitCount / checkpoints.length;
     
-    // Require at least 65% of checkpoints to be hit (more forgiving - easier to complete)
-    const requiredPercentage = 0.65;
+    // Require both checkpoints to be hit (100% - ensures the letter shape is properly drawn)
+    const requiredPercentage = 1.0;
     
     if (completionPercentage >= requiredPercentage) {
         // Start completion timer if not already started
